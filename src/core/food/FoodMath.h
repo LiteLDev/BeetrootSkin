@@ -139,7 +139,9 @@ struct IconRange {
 /// Non-finite inputs give 0. Not capped by missing health.
 [[nodiscard]] float naturalRegenEstimate(int hunger, float saturation, float exhaustion) noexcept;
 /// HP restored by a Regeneration effect of `amplifier` lasting `durationTicks`
-/// (floor(duration / max(50 >> amplifier, 1))).
+/// (floor(duration / max(50 >> (amplifier & 31), 1)); negative amplifiers count as 0). Bedrock uses the same intervals
+/// as Java (Regen I 50 ticks, II 25, ...): e.g. the enchanted golden apple's Regen II for 30 s heals 24 HP
+/// (minecraft.wiki "Regeneration").
 [[nodiscard]] float regenerationEffectHealth(int amplifier, int durationTicks) noexcept;
 
 /// Estimated HP gained by eating `food` (AppleSkin getEstimatedHealthIncrement for Bedrock):

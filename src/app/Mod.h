@@ -27,6 +27,9 @@ bool saveConfig();
 namespace detail {
 /// Called once by BeetrootSkin::load().
 void initPaths(std::filesystem::path const& modDir, std::filesystem::path const& configDir);
+/// Called once by BeetrootSkin::load(), after initPaths() and before loadTranslations(). Loads
+/// the config, then runs app::loadModules() (every Module::onLoad()): src/mod can't be edited,
+/// so this is the load-time hook point.
 void loadConfig();
 } // namespace detail
 

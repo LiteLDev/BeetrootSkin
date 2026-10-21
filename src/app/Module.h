@@ -31,7 +31,18 @@ public:
     virtual void install() = 0;
     /// Called once from BeetrootSkin::disable(). Undo everything install() did.
     virtual void uninstall() = 0;
+    /// Called once during BeetrootSkin::load() (main thread, after the config is loaded, before
+    /// any install()), for work the game needs before mods are enabled, e.g. creating
+    /// ll::input::KeyRegistry keys (the game reads them into its keyboard layout before
+    /// enable()). Translations are not loaded yet (app::tr() returns fallbacks). Runs once per
+    /// process, even across disable/enable: install() must redo anything uninstall() undoes.
+    /// Default: nothing.
+    virtual void onLoad() {}
 };
+
+/// Run onLoad() of every module (sorted by order()); a module that throws is logged and skipped.
+/// Called once from app::detail::loadConfig() (i.e. BeetrootSkin::load()).
+void loadModules();
 
 /// All registered modules (registration order). Static-init safe.
 [[nodiscard]] std::vector<Module*>& modules();
