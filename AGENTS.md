@@ -9,7 +9,7 @@ The project layout, rules and harness come from the sibling project BEI (same au
 
 | Path | What it is |
 | ---- | ---------- |
-| `src/core/` | Pure C++ logic, **no `mc/` or `ll/` includes**. Static lib `beetroot-core`, unit-tested on the host. `food/FoodMath` (Bedrock hunger/saturation/regen math, flash animation, AppleSkin sprite math), `state/Config` (+`AtomicWrite`), `geom/Rect`. |
+| `src/core/` | Pure C++ logic, **no `mc/` or `ll/` includes**. Static lib `beetroot-core`, unit-tested on the host. `food/FoodMath` (Bedrock hunger/saturation/regen math, flash animation, AppleSkin sprite math), `food/HealthPreview` (health-restored overlay plan, `restingIconY`), `state/Config` (+`AtomicWrite`), `geom/Rect`. |
 | `src/game/` | Adapters from game objects to core structs: `Game` (client/player/level helpers), `FoodValues` (item -> `core::FoodValues`), `PlayerFoodState` (local player -> `core::FoodState`, held food). |
 | `src/ui/` | Rendering: `gfx/Painter`, `hud/HudHooks` (HUD layer contract + plumbing), `tooltip/TooltipHooks` (tooltip extension contract + plumbing), `Keys` (`isShiftDown()`). |
 | `src/app/` | `Module` registry, `Mod` (paths, `config()`, `saveConfig()`, `debugDraw()`), `I18n` (`tr()`), `KeyNames` (controls-menu names of BeetrootSkin keys). |

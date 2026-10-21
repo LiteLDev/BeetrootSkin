@@ -101,7 +101,10 @@ float naturalRegenEstimate(int hunger, float saturation, float exhaustion) noexc
 
 float regenerationEffectHealth(int amplifier, int durationTicks) noexcept {
     if (durationTicks <= 0) return 0;
-    int shift    = std::clamp(amplifier, 0, 31);
+    // Like `50 >> amplifier` on the JVM and on x86 (both shift by the low 5 bits), so levels
+    // above 32 wrap around (minecraft.wiki "Regeneration": amplifiers are used modulo 32).
+    // Negative amplifiers (never produced by the game) count as level I.
+    int shift    = std::max(amplifier, 0) & 31;
     int interval = std::max(50 >> shift, 1);
     return std::floor(static_cast<float>(durationTicks) / static_cast<float>(interval));
 }
