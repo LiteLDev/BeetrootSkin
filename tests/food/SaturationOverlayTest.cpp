@@ -91,3 +91,11 @@ TEST(SaturationOverlay, PreviewGainZeroWhenNotEdible) {
     // Saturation already above the new hunger level: nothing gained.
     EXPECT_FLOAT_EQ(saturationPreviewGain(withFood(4, 10), FoodValues::make(1, 0.1f)), 0.f);
 }
+
+TEST(SaturationOverlay, PeacefulFullBarStillPreviewsSaturation) {
+    // Bedrock lets Peaceful players eat with a full bar, so the saturation gain is previewed.
+    auto steak = FoodValues::make(8, 0.8f);
+    auto s     = withFood(20, 5);
+    s.peaceful = true;
+    EXPECT_FLOAT_EQ(saturationPreviewGain(s, steak), 12.8f);
+}

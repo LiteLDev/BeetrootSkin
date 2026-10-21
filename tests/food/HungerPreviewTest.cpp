@@ -29,6 +29,17 @@ TEST(HungerPreview, ShownOnlyWhenEnabledEdibleAndSurvival) {
     EXPECT_FALSE(shouldShowHungerPreview(true, withHunger(8), FoodValues::make(0, 0.f, true)));
 }
 
+TEST(HungerPreview, PeacefulFullBarIsEdibleButGainsNoShanks) {
+    auto beef         = FoodValues::make(8, 0.8f);
+    auto peaceful     = withHunger(20);
+    peaceful.peaceful = true;
+    EXPECT_TRUE(shouldShowHungerPreview(true, peaceful, beef));
+    EXPECT_TRUE(hungerPreviewIconList(20, beef).empty()); // nothing to draw on a full bar
+    // Creative still hides it (no hunger bar), Peaceful or not.
+    peaceful.creativeLike = true;
+    EXPECT_FALSE(shouldShowHungerPreview(true, peaceful, beef));
+}
+
 TEST(HungerPreview, IconListMatchesAppleSkinRange) {
     // hunger 7 + 8 = 15: icons 3..7, the last one (index 7, hunger 15) is half.
     auto icons = hungerPreviewIconList(7, FoodValues::make(8, 0.8f));

@@ -17,36 +17,16 @@ namespace {
 
 constexpr float ICON = static_cast<float>(core::sprites::HUD_ICON_SIZE);
 
-/// Resting y of the hunger icons relative to the owner control, learned from frames in which
-/// vanilla doesn't shake the bar (all icons on one line). HudContext::hungerJitterY is measured
-/// from the highest icon of the current frame, which is not the resting line while every shank
-/// shakes (saturation 0), so it is only the fallback until a still frame has been seen.
-struct RestLine {
-    bool  known  = false;
-    float offset = 0; ///< icon y - control y
-};
-RestLine gRest;
-
-void learnRestLine(ui::HudContext const& ctx) {
-    float y = ctx.hungerIcons[0].y;
-    for (auto const& r : ctx.hungerIcons) {
-        if (r.y != y) return;
-    }
-    gRest = {true, y - ctx.control.y};
-}
-
 /// Draw `icons` over the hunger bar at `alpha`. With showVanillaAnimationsOverlay off the vanilla
 /// jitter is removed so the outlines stay still (AppleSkin only follows the shake when enabled).
 void drawIcons(ui::HudContext& ctx, std::vector<core::SaturationIcon> const& icons, float alpha) {
-    learnRestLine(ctx);
     if (icons.empty() || !(alpha > 0)) return;
     bool followJitter = app::config().showVanillaAnimationsOverlay;
     for (auto const& icon : icons) {
         if (icon.index < 0 || icon.index >= core::ICONS_PER_ROW) continue;
-        core::Rect dst = ctx.hungerIcons[icon.index];
-        if (!followJitter) {
-            dst.y = gRest.known ? ctx.control.y + gRest.offset : dst.y - ctx.hungerJitterY[icon.index];
-        }
+        auto       i   = static_cast<std::size_t>(icon.index);
+        core::Rect dst = ctx.hungerIcons[i];
+        if (!followJitter) dst.y -= ctx.hungerJitterY[i];
         ctx.painter.texture(
             ui::textures::ICONS,
             dst,

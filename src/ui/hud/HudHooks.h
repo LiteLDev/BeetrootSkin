@@ -46,7 +46,9 @@ struct HudContext {
     /// hunger renderer has been seen once (then the rects are a best-effort layout).
     std::array<core::Rect, core::ICONS_PER_ROW> hungerIcons{};
     bool                                        hungerIconsValid = false;
-    /// Vanilla jitter of each hunger icon relative to its resting position (y only in vanilla).
+    /// Vanilla jitter of each hunger icon relative to its resting position (y only in vanilla;
+    /// resting line learned from still frames, see core::RestingRows). Subtract it from the rect
+    /// to draw at rest (showVanillaAnimationsOverlay off).
     std::array<float, core::ICONS_PER_ROW> hungerJitterY{};
     /// False when vanilla does not draw the hunger bar (HudHungerRenderer::mShouldRender; Bedrock
     /// keeps the bar while riding, mount hearts go above it). Last value seen by the hunger
@@ -57,7 +59,9 @@ struct HudContext {
     /// (health 1-2), continuing rightwards and then upwards for further rows. Absorption hearts
     /// are not included. Empty until the heart renderer has been seen once.
     std::vector<core::Rect> heartIcons;
-    std::vector<float>      heartJitterY;
+    /// Vanilla jitter (low-health shake) of each heart relative to its resting row, like
+    /// hungerJitterY; same size as heartIcons.
+    std::vector<float> heartJitterY;
 
     /// Local player state (nullopt when unavailable) and the food in hand (main hand first,
     /// offhand if allowed by config). Both read once per frame.

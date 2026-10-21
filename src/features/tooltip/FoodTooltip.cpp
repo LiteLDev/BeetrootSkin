@@ -82,23 +82,17 @@ public:
         constexpr float hs     = layout::HUNGER_ICON_SIZE;
         constexpr float ss     = layout::SATURATION_ICON_SIZE;
 
-        // Hunger row: background, tinted outline, default value (faint), modified value. Each
-        // quad is flushed on its own: one flushImages call only draws a single texture correctly.
+        // Hunger row: background, tinted outline, default value (faint), modified value (the
+        // Painter keeps the submission order and splits its batches per texture).
         for (auto const& icon : l.hunger) {
             core::Rect dst{x0 + static_cast<float>(icon.x), y0, hs, hs};
             p.texture(HUNGER_BACKGROUND, dst, 1.f, fg);
-            p.flush();
             if (icon.outline != layout::Outline::Normal) {
                 auto c = layout::outlineColor(icon.outline);
                 p.texture(ui::textures::TOOLTIP_HUNGER_OUTLINE, dst, {0, 0, hs, hs}, hs, hs, {c.r, c.g, c.b, c.a}, fg);
-                p.flush();
             }
             p.texture(shank(rotten, icon.defaultHalf), dst, 0.25f, fg);
-            p.flush();
-            if (icon.showModified) {
-                p.texture(shank(rotten, icon.modifiedHalf), dst, 1.f, fg);
-                p.flush();
-            }
+            if (icon.showModified) p.texture(shank(rotten, icon.modifiedHalf), dst, 1.f, fg);
         }
 
         // Saturation row.
