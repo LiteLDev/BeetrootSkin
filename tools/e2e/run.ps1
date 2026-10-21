@@ -27,16 +27,22 @@ $ErrorActionPreference = 'Stop'
 $scenarioFile = Join-Path $PSScriptRoot "scenarios/$Scenario.ps1"
 if (-not (Test-Path $scenarioFile)) { throw "Unknown scenario: $scenarioFile" }
 
+# A locked workstation delivers no input: wait for an unlock instead of failing (before taking the
+# lock, so other projects are not blocked meanwhile, and again right before launching).
+Wait-SessionUnlocked | Out-Null
 Enter-E2ELock
 $failed = $null
 try {
     if (Get-GameProcess) { Write-Step "closing a running game first"; Stop-Game }
+    # Leftovers of a killed run: options.txt backup (Disable-OtherMods puts mods back itself).
+    Restore-GameOptions
     Disable-OtherMods
     if (-not $NoDeploy) { Deploy-Mod }
     Restore-TestWorld
     # Optional scenarios\<name>.prelaunch.ps1, e.g. to seed mods\BeetrootSkin\config before the mod loads.
     $prelaunch = Join-Path $PSScriptRoot "scenarios/$Scenario.prelaunch.ps1"
     if (Test-Path $prelaunch) { . $prelaunch }
+    Wait-SessionUnlocked | Out-Null
     Start-Game | Out-Null
     Wait-GameReady
     Enter-TestWorld
@@ -50,14 +56,23 @@ try {
     try { Save-Screenshot 'failure' $Scenario | Out-Null } catch {}
     Get-LeviLog | Select-Object -Last 40 | ForEach-Object { Write-Host "  | $_" }
 } finally {
+    # Every cleanup step runs even when an earlier one fails.
     if (-not $KeepOpen) {
-        Stop-Game
+        try { Stop-Game } catch { Write-Host "[e2e] Stop-Game failed: $_" -ForegroundColor Red }
         # Optional scenarios\<name>.restore.ps1 undoes what the prelaunch script changed.
         $restore = Join-Path $PSScriptRoot "scenarios/$Scenario.restore.ps1"
-        if (Test-Path $restore) { & pwsh -NoProfile -File $restore }
+        if (Test-Path $restore) {
+            try {
+                & pwsh -NoProfile -File $restore
+                if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }
+            } catch { Write-Host "[e2e] $restore failed: $_" -ForegroundColor Red }
+        }
+        # The game writes options.txt when it exits: restore it only afterwards. (With -KeepOpen
+        # the next run, or tools\e2e\restore-mods.ps1, puts it back.)
+        try { Restore-GameOptions } catch { Write-Host "[e2e] Restore-GameOptions failed: $_" -ForegroundColor Red }
     }
     # Mods are loaded at game start, so BEI can go back right away even with -KeepOpen.
-    Restore-OtherMods
+    try { Restore-OtherMods | Out-Null } catch { Write-Host "[e2e] Restore-OtherMods failed: $_" -ForegroundColor Red }
     Exit-E2ELock
 }
 if ($failed) { exit 1 }

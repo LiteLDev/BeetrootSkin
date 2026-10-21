@@ -6,10 +6,9 @@
 #   hide_gui.png     F1 (hide GUI) hides the line too
 #   off.png          after F6 again: line gone, "off" message
 #   chat_f6.png      F6 with the chat screen open: ignored
-# The key's presence in the game's keyboard layout (what Settings > Keyboard & Mouse lists) is
-# asserted through the "hotkey mapped to key code 117" log line. The settings screens are
-# OreUI and are neither captured by PrintWindow nor reachable with ESC from this harness, so
-# the menu entry itself is not screenshotted.
+# The key's presence in the game's keyboard layout is asserted through the "hotkey mapped to key
+# code 117" log line; its entry in Settings > Keyboard & Mouse (name and default F6, English and
+# Chinese) is covered by the controls / controls_zh scenarios.
 $u = 'debug_info'
 $cfg = Join-Path $script:ModsDir "$script:ModName\config\config.json"
 
