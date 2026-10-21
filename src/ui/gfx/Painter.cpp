@@ -292,12 +292,15 @@ void Painter::flush() {
     };
 
     // Rectangles and textured quads of one layer, in submission order (later commands draw on
-    // top). Consecutive commands of the same kind and tint share one flushImages call.
+    // top). Consecutive commands of the same kind, tint and texture share one flushImages call:
+    // a flushImages call draws all its quads with a single texture, so a texture change must end
+    // the run (quads of other textures recorded into it drew partly or with the wrong image).
     auto quads = [&](Layer layer) {
         enum class Run { None, Fill, Image };
-        Run   run     = Run::None;
-        Color runTint = palette::WHITE;
-        auto  endRun  = [&] {
+        Run                       run     = Run::None;
+        Color                     runTint = palette::WHITE;
+        BedrockTextureData const* runTex  = nullptr;
+        auto                      endRun  = [&] {
             if (run == Run::Fill) mCtx.flushImages(white, 1.f, fillMaterial());
             if (run == Run::Image) mCtx.flushImages(toMce(runTint.withAlpha(1.f)), runTint.a, imageMaterial());
             run = Run::None;
@@ -313,7 +316,12 @@ void Painter::flush() {
             if (!tc) continue;
             auto const* data = clientTexture(tc->tex);
             if (!data) continue;
-            if (run != Run::Image || runTint != tc->tint) endRun(), run = Run::Image, runTint = tc->tint;
+            if (run != Run::Image || runTint != tc->tint || runTex != data) {
+                endRun();
+                run     = Run::Image;
+                runTint = tc->tint;
+                runTex  = data;
+            }
             mCtx.drawImage(
                 data->mClientTexture,
                 {tc->r.x, tc->r.y},
