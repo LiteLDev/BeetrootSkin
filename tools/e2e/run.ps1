@@ -1,0 +1,63 @@
+<#
+.SYNOPSIS
+  Run a BeetrootSkin end-to-end scenario against the real game.
+
+.DESCRIPTION
+  Takes the machine-wide e2e lock (shared with BEI), moves other mods (BEI) aside, deploys
+  bin\BeetrootSkin, restores the BeetrootSkin-Test world, launches Minecraft through
+  LeviLauncher, enters the world, runs tools\e2e\scenarios\<Scenario>.ps1, checks the
+  LeviLamina log for errors and always closes the game, restores the other mods and releases
+  the lock.
+
+  Screenshots land in tools\e2e\out\<Scenario>\. Review them (they are the evidence).
+
+.EXAMPLE
+  pwsh tools/e2e/run.ps1 -Scenario smoke
+  pwsh tools/e2e/run.ps1 -Scenario smoke -KeepOpen   # leave the game running for manual poking
+#>
+param(
+    [Parameter(Mandatory)] [string]$Scenario,
+    [switch]$NoDeploy,
+    [switch]$KeepOpen
+)
+
+. "$PSScriptRoot/lib.ps1"
+$ErrorActionPreference = 'Stop'
+
+$scenarioFile = Join-Path $PSScriptRoot "scenarios/$Scenario.ps1"
+if (-not (Test-Path $scenarioFile)) { throw "Unknown scenario: $scenarioFile" }
+
+Enter-E2ELock
+$failed = $null
+try {
+    if (Get-GameProcess) { Write-Step "closing a running game first"; Stop-Game }
+    Disable-OtherMods
+    if (-not $NoDeploy) { Deploy-Mod }
+    Restore-TestWorld
+    # Optional scenarios\<name>.prelaunch.ps1, e.g. to seed mods\BeetrootSkin\config before the mod loads.
+    $prelaunch = Join-Path $PSScriptRoot "scenarios/$Scenario.prelaunch.ps1"
+    if (Test-Path $prelaunch) { . $prelaunch }
+    Start-Game | Out-Null
+    Wait-GameReady
+    Enter-TestWorld
+    $script:Unit = $Scenario
+    . $scenarioFile
+    Assert-NoErrors
+    Write-Step "scenario '$Scenario' PASSED"
+} catch {
+    $failed = $_
+    Write-Host "[e2e] scenario '$Scenario' FAILED: $_" -ForegroundColor Red
+    try { Save-Screenshot 'failure' $Scenario | Out-Null } catch {}
+    Get-LeviLog | Select-Object -Last 40 | ForEach-Object { Write-Host "  | $_" }
+} finally {
+    if (-not $KeepOpen) {
+        Stop-Game
+        # Optional scenarios\<name>.restore.ps1 undoes what the prelaunch script changed.
+        $restore = Join-Path $PSScriptRoot "scenarios/$Scenario.restore.ps1"
+        if (Test-Path $restore) { & pwsh -NoProfile -File $restore }
+    }
+    # Mods are loaded at game start, so BEI can go back right away even with -KeepOpen.
+    Restore-OtherMods
+    Exit-E2ELock
+}
+if ($failed) { exit 1 }
