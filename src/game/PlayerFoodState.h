@@ -15,6 +15,20 @@ namespace beetroot::game {
 /// they come from the client's synced attributes.
 [[nodiscard]] std::optional<core::FoodState> readFoodState();
 
+/// Dev/test switch (features/sync): ignore the integrated server snapshot so readFoodState()
+/// takes the remote-server (client attribute) path even in single-player. Any thread.
+void               setForceClientSource(bool force);
+[[nodiscard]] bool forceClientSource();
+
+/// readFoodState() from the client's own attributes and level, ignoring the integrated server
+/// (what a remote-server client sees). Client thread.
+[[nodiscard]] std::optional<core::FoodState> readClientFoodState();
+/// readFoodState() from the integrated server snapshot regardless of setForceClientSource();
+/// nullopt when there is no current snapshot (remote server, not in a world). Only hunger,
+/// saturation, exhaustion, health, peaceful and naturalRegen come from the server; the other
+/// fields (effects, game mode, hardcore, riding) are the client's in either case. Client thread.
+[[nodiscard]] std::optional<core::FoodState> readIntegratedServerFoodState();
+
 /// Food the local player holds, as AppleSkin picks it.
 struct HeldFood {
     core::FoodValues values;

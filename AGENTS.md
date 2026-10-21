@@ -173,6 +173,15 @@ needs at least one commit to build.
   effects) `core::vanillaFoodEffects(itemId)` supplies vanilla values.
 - Attributes: `Player::HUNGER()/SATURATION()/EXHAUSTION()`, `SharedAttributes::HEALTH()`,
   `actor.getAttribute(attr).mPtr->mCurrentValue` (and `mCurrentMaxValue`).
+- The server syncs `minecraft:player.hunger`, `.saturation`, `.exhaustion` and `minecraft:health`
+  to the client (UpdateAttributesPacket, on every change; verified with `force_client_sync`), and
+  the client level gets difficulty (SetDifficultyPacket) and game rules (GameRulesChangedPacket), so
+  the client-attribute path is accurate on remote servers too; no exhaustion estimate is needed
+  (the client also predicts exhaustion locally: it can briefly read above 4 until the server's
+  saturation/hunger step arrives one tick later).
+- Look game rules up by name (`GameRule::mName`, e.g. `naturalRegeneration`, case-insensitive),
+  not by `GameRulesIndex`: index 20 (`DoNaturalRegeneration`) read `true` after
+  `/gamerule naturalregeneration false` on 1.26.51.
 
 **Policy**
 - Lamium (github.com/amatouhake/Lamium) has no license. Read it for ideas only and never copy code.
