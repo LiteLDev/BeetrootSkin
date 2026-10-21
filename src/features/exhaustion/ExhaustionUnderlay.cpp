@@ -7,9 +7,6 @@
 #include "ui/gfx/Painter.h"
 #include "ui/hud/HudHooks.h"
 
-#include <algorithm>
-#include <cmath>
-
 namespace beetroot::features::exhaustion {
 
 namespace {
@@ -43,33 +40,9 @@ public:
     }
 
 private:
-    // Resting y of the bar: vanilla shakes the shanks individually when saturation is 0, so use
-    // the y of the last frame in which all icons were aligned (for the same bar position).
-    float restingY(ui::HudContext const& ctx) {
-        auto const& icons = ctx.hungerIcons;
-        bool        aligned =
-            std::all_of(ctx.hungerJitterY.begin(), ctx.hungerJitterY.end(), [](float j) { return j == 0.f; });
-        if (aligned) {
-            mRestX   = icons[0].x;
-            mRestY   = icons[0].y;
-            mHasRest = true;
-            return mRestY;
-        }
-        if (mHasRest && mRestX == icons[0].x && std::abs(mRestY - icons[0].y) <= 2.f) return mRestY;
-        // No aligned frame seen for this position yet: the most common y is the best guess.
-        mHasRest        = false;
-        float best      = icons[0].y;
-        int   bestCount = 0;
-        for (auto const& a : icons) {
-            int n =
-                static_cast<int>(std::count_if(icons.begin(), icons.end(), [&](auto const& b) { return b.y == a.y; }));
-            if (n > bestCount) {
-                bestCount = n;
-                best      = a.y;
-            }
-        }
-        return best;
-    }
+    // Resting y of the bar: HudHooks reports each shank's vanilla jitter relative to the learned
+    // resting line, so removing it from the rightmost icon gives the bar's resting y.
+    static float restingY(ui::HudContext const& ctx) { return ctx.hungerIcons[0].y - ctx.hungerJitterY[0]; }
 
     static bool shouldDraw(ui::HudContext const& ctx) {
         if (!app::config().showFoodExhaustionHudUnderlay) return false;
@@ -103,10 +76,8 @@ private:
         );
     }
 
-    float mRestX = 0, mRestY = 0;
-    bool  mHasRest     = false;
-    int   mLastBucket  = -2;
-    bool  mLastVisible = false;
+    int  mLastBucket  = -2;
+    bool mLastVisible = false;
 } gLayer;
 BS_REGISTER_HUD_LAYER(gLayer);
 
