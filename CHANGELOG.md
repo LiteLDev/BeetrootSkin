@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Project scaffold: LeviLamina client mod build, configuration file (AppleSkin option names), Bedrock food math with unit tests, HUD and tooltip extension points, and an end-to-end test harness.
+- Exhaustion underlay behind the hunger bar (AppleSkin's `showFoodExhaustionHudUnderlay`), hidden in creative/spectator and whenever vanilla hides the hunger bar (Bedrock keeps it while riding and draws the mount's hearts above it).
 - Food-state accuracy (AppleSkin's sync equivalent): the integrated-server snapshot survives pauses and is cleared on leaving a world, the naturalregeneration game rule is looked up by name (the index lookup always read `true`), and source changes, synced attributes and rule/difficulty updates are logged; `mods/BeetrootSkin/force_client_sync` forces the remote-server (client attribute) path for testing.
 - Food tooltips: hunger and saturation icons for food items (hold Shift, or always), like AppleSkin.
 - Hunger-restored HUD preview: the shanks the held food (main hand, or offhand) would fill flash on the hunger bar, green for rotten food (AppleSkin `showFoodValuesHudOverlay`).

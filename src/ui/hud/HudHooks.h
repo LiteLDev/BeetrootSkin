@@ -50,6 +50,10 @@ struct HudContext {
     /// resting line learned from still frames, see core::RestingRows). Subtract it from the rect
     /// to draw at rest (showVanillaAnimationsOverlay off).
     std::array<float, core::ICONS_PER_ROW> hungerJitterY{};
+    /// False when vanilla does not draw the hunger bar (HudHungerRenderer::mShouldRender; Bedrock
+    /// keeps the bar while riding, mount hearts go above it). Last value seen by the hunger
+    /// renderer; true until then. Hunger-slot layers are not run while it is false.
+    bool hungerBarShown = true;
 
     /// Heart icons (9x9 each) in vanilla order: index 0 is the leftmost heart of the bottom row
     /// (health 1-2), continuing rightwards and then upwards for further rows. Absorption hearts

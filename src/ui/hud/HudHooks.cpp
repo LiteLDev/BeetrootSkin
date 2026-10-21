@@ -37,6 +37,7 @@ int                 gTick = 0;
 std::array<core::Rect, core::ICONS_PER_ROW> gHungerIcons{};
 std::array<float, core::ICONS_PER_ROW>      gHungerJitter{};
 bool                                        gHungerValid = false;
+bool                                        gHungerShown = true;
 std::vector<core::Rect>                     gHeartIcons;
 std::vector<float>                          gHeartJitter;
 
@@ -76,6 +77,7 @@ void runLayers(HudSlot slot, MinecraftUIRenderContext& ctx, core::Rect const& co
     hc.hungerIcons      = gHungerIcons;
     hc.hungerIconsValid = gHungerValid;
     hc.hungerJitterY    = gHungerJitter;
+    hc.hungerBarShown   = gHungerShown;
     hc.heartIcons       = gHeartIcons;
     hc.heartJitterY     = gHeartJitter;
     hc.state            = game::readFoodState();
@@ -133,6 +135,11 @@ void updateHungerLayout(HudHungerRenderer const& r, core::Rect const& control) {
     }
     gHungerRange.observe("Hunger", gHungerRest, gHungerJitter);
     gHungerValid = true;
+    bool shown   = r.mShouldRender;
+    if (shown != gHungerShown) {
+        gHungerShown = shown;
+        log().info("Hunger bar shown: {}", shown);
+    }
     // Calibration log: on layout changes (without jitter) only.
     static core::Rect lastControl{};
     static float      lastX0 = -1;
@@ -200,6 +207,14 @@ LL_TYPE_INSTANCE_HOOK(
     if (!isHudScene(ctx)) return origin(ctx, client, owner, pass);
     auto control = controlRect(owner);
     updateHungerLayout(*this, control);
+    static unsigned seenPasses = 0; // diagnostics: log each distinct pass value once
+    if (pass >= 0 && pass < 32 && !(seenPasses & (1u << pass))) {
+        seenPasses |= 1u << pass;
+        log().info("Hunger renderer pass: {}", pass);
+    }
+    // Vanilla draws no hunger bar this frame: no hunger overlays either (AppleSkin only draws
+    // where vanilla food is drawn; note Bedrock keeps the bar while riding, unlike Java).
+    if (!gHungerShown) return origin(ctx, client, owner, pass);
     runLayers(HudSlot::BelowHunger, ctx, control);
     origin(ctx, client, owner, pass);
     runLayers(HudSlot::AboveHunger, ctx, control);
