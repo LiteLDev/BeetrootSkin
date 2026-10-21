@@ -90,9 +90,10 @@ Invoke-Chat '/replaceitem entity @s slot.weapon.offhand 0 air'
 # Creative: hidden (AppleSkin: !canHurtPlayer).
 Select-Hotbar 1
 Start-Sleep -Milliseconds 500
-$n = LogCount
 Set-Creative
-Expect-Preview 'hidden' $n
+# Bedrock does not draw the hunger bar in creative at all, so the layer never runs (and logs
+# nothing); the screenshot must show no hunger bar and no preview.
+Start-Sleep -Seconds 2
 Shot 'creative'
 Set-Survival
 Start-Sleep -Seconds 1
