@@ -1,7 +1,8 @@
-# Exhaustion underlay: sprint-jump in survival and capture the strip under the hunger bar at
-# several fill levels, then mount a pig and a horse (vanilla replaces the hunger bar with the
-# mount's health) and switch to creative: the strip must be hidden there.
-# Screenshots: out/exhaustion/{start,sprint-1..6,stopped,pig,horse,dismounted,creative}.png
+# Exhaustion underlay: sprint-jump in survival, then sweep exhaustion with the Hunger effect, and
+# capture the strip under the hunger bar at several fill levels. Then ride a horse: unlike Java,
+# Bedrock keeps the hunger bar while riding (the mount's hearts go in rows above it), so the
+# underlay must follow vanilla and stay. Finally creative: no hunger bar, no underlay.
+# Screenshots: out/exhaustion/{start,sprint-1..3,hunger-1..6,stopped,horse,dismounted,creative}.png
 $u = 'exhaustion'
 Wait-LogLine 'Food state: ' 30 | Out-Null
 Reset-Player
@@ -52,22 +53,20 @@ if ($lines.Count -lt 3) { throw 'exhaustion underlay did not animate' }
 Save-Screenshot 'stopped' $u | Out-Null
 Write-Step "food state: $(Get-FoodStateLog)"
 
-# Riding a living mount: vanilla hides the hunger bar, so must the underlay.
-foreach ($mount in @('pig', 'horse')) {
-    $after = (Get-LeviLog).Count
-    if ($mount -eq 'horse') { Invoke-Chat '/summon horse ~2 ~ ~ 0 0 minecraft:on_tame' }
-    else { Invoke-Chat '/summon pig ~2 ~ ~'; Invoke-Chat '/replaceitem entity @e[type=pig,c=1] slot.saddle 0 saddle' }
-    Start-Sleep -Milliseconds 500
-    Invoke-Chat "/ride @s start_riding @e[type=$mount,c=1]"
-    Start-Sleep -Seconds 2
-    Save-Screenshot $mount $u | Out-Null
-    $hid = @(Get-LogSince $after | Select-String 'Hunger bar shown: false|Exhaustion underlay: hidden')
-    Write-Step "$mount -> $($hid | ForEach-Object { $_.Line })"
-    if ($hid.Count -eq 0 -and $mount -eq 'horse') { throw "hunger bar / underlay not hidden while riding a $mount" }
-    Invoke-Chat '/ride @s stop_riding'
-    Invoke-Chat "/kill @e[type=$mount]"
-    Start-Sleep -Seconds 1
-}
+# Riding a living mount: the underlay follows vanilla's hunger bar (HudHungerRenderer's
+# mShouldRender). Bedrock keeps the bar while riding, so neither may be reported hidden.
+$after = (Get-LeviLog).Count
+Invoke-Chat '/summon horse ~2 ~ ~ 0 0 minecraft:on_tame'
+Start-Sleep -Milliseconds 500
+Invoke-Chat '/ride @s start_riding @e[type=horse,c=1]'
+Start-Sleep -Seconds 2
+Save-Screenshot 'horse' $u | Out-Null
+$hid = @(Get-LogSince $after | Select-String 'Hunger bar shown: false|Exhaustion underlay: hidden')
+Write-Step "horse -> hidden lines: $($hid.Count) $($hid | ForEach-Object { $_.Line })"
+if ($hid.Count -ne 0) { throw 'underlay hidden while vanilla still shows the hunger bar (riding)' }
+Invoke-Chat '/ride @s stop_riding'
+Invoke-Chat '/kill @e[type=horse]'
+Start-Sleep -Seconds 1
 Save-Screenshot 'dismounted' $u | Out-Null
 
 $after = (Get-LeviLog).Count

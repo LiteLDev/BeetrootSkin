@@ -176,7 +176,8 @@ LL_TYPE_INSTANCE_HOOK(
         seenPasses |= 1u << pass;
         log().info("Hunger renderer pass: {}", pass);
     }
-    // Vanilla draws no hunger bar (e.g. a mount's health replaces it): no hunger overlays either.
+    // Vanilla draws no hunger bar this frame: no hunger overlays either (AppleSkin only draws
+    // where vanilla food is drawn; note Bedrock keeps the bar while riding, unlike Java).
     if (!gHungerShown) return origin(ctx, client, owner, pass);
     runLayers(HudSlot::BelowHunger, ctx, control);
     origin(ctx, client, owner, pass);

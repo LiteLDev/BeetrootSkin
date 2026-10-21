@@ -48,8 +48,9 @@ struct HudContext {
     bool                                        hungerIconsValid = false;
     /// Vanilla jitter of each hunger icon relative to its resting position (y only in vanilla).
     std::array<float, core::ICONS_PER_ROW> hungerJitterY{};
-    /// False when vanilla does not draw the hunger bar (HudHungerRenderer::mShouldRender, e.g.
-    /// while a mount's health replaces it). Last value seen by the hunger renderer; true until then.
+    /// False when vanilla does not draw the hunger bar (HudHungerRenderer::mShouldRender; Bedrock
+    /// keeps the bar while riding, mount hearts go above it). Last value seen by the hunger
+    /// renderer; true until then. Hunger-slot layers are not run while it is false.
     bool hungerBarShown = true;
 
     /// Heart icons (9x9 each) in vanilla order: index 0 is the leftmost heart of the bottom row
