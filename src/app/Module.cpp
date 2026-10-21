@@ -16,10 +16,31 @@ std::vector<Module*>& modules() {
     return instance;
 }
 
-void installModules() {
+namespace {
+std::vector<Module*> sortedModules() {
     auto sorted = modules();
     std::stable_sort(sorted.begin(), sorted.end(), [](Module* a, Module* b) { return a->order() < b->order(); });
-    for (auto* m : sorted) {
+    return sorted;
+}
+} // namespace
+
+void loadModules() {
+    static bool loaded = false;
+    if (loaded) return;
+    loaded = true;
+    for (auto* m : sortedModules()) {
+        try {
+            m->onLoad();
+        } catch (std::exception const& e) {
+            log().error("Module {} failed to load: {}", m->name(), e.what());
+        } catch (...) {
+            log().error("Module {} failed to load", m->name());
+        }
+    }
+}
+
+void installModules() {
+    for (auto* m : sortedModules()) {
         try {
             m->install();
             gInstalled.push_back(m);

@@ -1,0 +1,7 @@
+{
+  "beetroot.key.toggle_food_debug_info": "切换饥饿调试信息",
+  "beetroot.key.toggle_food_debug_info.description": "显示或隐藏 AppleSkin 的饥饿值/饱和度/消耗度信息",
+  "beetroot.debug_info.toggled_on": "AppleSkin 调试信息：开",
+  "beetroot.debug_info.toggled_off": "AppleSkin 调试信息：关",
+  "beetroot.debug_info.source_client": "（客户端）"
+}

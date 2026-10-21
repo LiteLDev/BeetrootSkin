@@ -12,7 +12,7 @@ The project layout, rules and harness come from the sibling project BEI (same au
 | `src/core/` | Pure C++ logic, **no `mc/` or `ll/` includes**. Static lib `beetroot-core`, unit-tested on the host. `food/FoodMath` (Bedrock hunger/saturation/regen math, flash animation, AppleSkin sprite math), `food/HealthPreview` (health-restored overlay plan, `restingIconY`), `state/Config` (+`AtomicWrite`), `geom/Rect`. |
 | `src/game/` | Adapters from game objects to core structs: `Game` (client/player/level helpers), `FoodValues` (item -> `core::FoodValues`), `PlayerFoodState` (local player -> `core::FoodState`, held food). |
 | `src/ui/` | Rendering: `gfx/Painter`, `hud/HudHooks` (HUD layer contract + plumbing), `tooltip/TooltipHooks` (tooltip extension contract + plumbing), `Keys` (`isShiftDown()`). |
-| `src/app/` | `Module` registry, `Mod` (paths, `config()`, `saveConfig()`, `debugDraw()`), `I18n` (`tr()`). |
+| `src/app/` | `Module` registry, `Mod` (paths, `config()`, `saveConfig()`, `debugDraw()`), `I18n` (`tr()`), `KeyNames` (controls-menu names of BeetrootSkin keys). |
 | `src/mod/` | Entry point (`BeetrootSkin.cpp`), `Log.h`, `MemoryOperators.cpp`. Installs every registered module; **features never edit it**. |
 | `src/debug/` | Debug HUD layer + tooltip extension, active only with the `debug_draw` marker (see below). |
 | `src/features/<name>/` | One folder per feature (added by feature work). Picked up by the `src/**.cpp` glob. |
@@ -26,8 +26,11 @@ The project layout, rules and harness come from the sibling project BEI (same au
 These headers are **contracts** between features. Extend them compatibly (add members/overloads,
 never change or remove existing ones); never edit `src/mod/`.
 
-- `app/Module.h`: `beetroot::app::Module` (`name()`, `order()`, `install()`, `uninstall()`) and
-  `BS_REGISTER_MODULE(obj)`. Everything that hooks or subscribes is a Module.
+- `app/Module.h`: `beetroot::app::Module` (`name()`, `order()`, `install()`, `uninstall()`,
+  `onLoad()`) and `BS_REGISTER_MODULE(obj)`. Everything that hooks or subscribes is a Module.
+  `onLoad()` (default no-op) runs during `BeetrootSkin::load()` (via `app::detail::loadConfig()` ->
+  `app::loadModules()`), before any `install()`: use it for things the game needs before mods are
+  enabled, such as `ll::input::KeyRegistry` keys (see `features/debug_info`).
 - `app/Mod.h`: `modDir()`, `configDir()`, `modFile(rel)`, `config()` (a `core::Config&`),
   `saveConfig()`, `debugDraw()`.
 - `app/I18n.h`: `tr("beetroot.key", "English fallback")`.
@@ -36,6 +39,8 @@ never change or remove existing ones); never edit `src/mod/`.
   `naturalRegenEstimate`, `regenerationEffectHealth`, `estimatedHealthIncrement`,
   `estimatedHealthAfterEating`, `FlashAnimator`, `isHarmfulEffect`, `effect_id::*`,
   `sprites::{hudSaturationU, tooltipSaturationU, tooltipSaturationV, exhaustionBarWidth, ...}`.
+- `core/food/DebugInfo.h`: `formatDecimal(value, DecimalPattern)` (java.text.DecimalFormat-like),
+  `foodDebugLine(...)` (AppleSkin's debug text).
 - `core/food/VanillaFoods.h`: `vanillaFoodEffects(itemId)`, `anyHarmful(effects)`.
 - `core/state/Config.h`: `Config` with AppleSkin's option names.
 - `core/geom/Rect.h`: `Rect` (GUI units).
@@ -153,6 +158,15 @@ needs at least one commit to build.
   client reads the snapshot (`FoodState::exact`).
 - `KeyInputEvent` / `MouseInputEvent` arrive on the **window thread**: decide synchronously
   whether to `cancel()`, do the work on the client thread.
+
+**Hotkeys**
+- Create `KeyRegistry` keys in `Module::onLoad()` (too late in `install()`), bind them in no input
+  mapping (`setInputMappingStack({})`), read the currently mapped codes in a
+  `VanillaClientInputMappingFactory::$_updateKeyboardAndMouseControls` hook and match raw
+  `KeyInputEvent`s against them (BEI's approach; `features/debug_info/DebugInfo.cpp`). The
+  controls menu names a key `key.BeetrootSkin.<name>`; `app/KeyNames.cpp` answers those
+  `I18nImpl::$get` lookups for every BeetrootSkin key from the lang keys `beetroot.key.<name>`
+  and `beetroot.key.<name>.description`.
 
 **Lifetimes**
 - Never keep raw game pointers across frames. Copies of game objects in statics must not be

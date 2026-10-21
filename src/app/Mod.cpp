@@ -1,5 +1,6 @@
 #include "app/Mod.h"
 
+#include "app/Module.h"
 #include "mod/Log.h"
 
 namespace beetroot::app {
@@ -36,7 +37,8 @@ void initPaths(std::filesystem::path const& modDir, std::filesystem::path const&
     gDebugDraw = std::filesystem::exists(gModDir / "debug_draw", ec);
 }
 
-void loadConfig() {
+namespace {
+void loadConfigFile() {
     std::error_code ec;
     bool            existed = std::filesystem::exists(configFile(), ec);
     if (!gConfig.load(configFile()) && existed) {
@@ -46,6 +48,14 @@ void loadConfig() {
     }
     // Write back so new fields appear in the file with their defaults.
     saveConfig();
+}
+} // namespace
+
+void loadConfig() {
+    loadConfigFile();
+    // BeetrootSkin::load() (src/mod, which features don't edit) calls this; it is the load-time
+    // hook point for Module::onLoad() (e.g. KeyRegistry keys must exist before enable()).
+    loadModules();
 }
 
 } // namespace detail
