@@ -155,7 +155,12 @@ TEST(RegenerationEffect, HealthPerDuration) {
     EXPECT_FLOAT_EQ(regenerationEffectHealth(4, 600), 200); // 50 >> 4 = 3
     EXPECT_FLOAT_EQ(regenerationEffectHealth(10, 20), 20);  // interval floors at 1
     EXPECT_FLOAT_EQ(regenerationEffectHealth(0, 0), 0);
+    // Amplifiers are used modulo 32 (Java's int shift, x86 sar): 32 behaves like 0, 255 like 31.
+    EXPECT_FLOAT_EQ(regenerationEffectHealth(32, 100), 2);
     EXPECT_FLOAT_EQ(regenerationEffectHealth(-1, 100), 2);
+    EXPECT_FLOAT_EQ(regenerationEffectHealth(255, 100), 100);
+    // Bedrock enchanted golden apple: Regen II for 30 s heals 24 HP.
+    EXPECT_FLOAT_EQ(regenerationEffectHealth(1, 600), 24);
 }
 
 TEST(HealthEstimate, NotHurtMeansZero) {
