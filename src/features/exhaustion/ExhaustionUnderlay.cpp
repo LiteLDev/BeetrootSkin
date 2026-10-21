@@ -1,11 +1,14 @@
 // AppleSkin's exhaustion underlay: a strip from icons.png drawn under the hunger bar, growing
 // from the right edge of the rightmost shank to the left as exhaustion rises from 0 to 4.
 // (AppleSkin HUDOverlayHandler.drawExhaustionOverlay: u = 81 - width, v = 18, alpha 0.75.)
+#include "api/Post.h"
 #include "app/Mod.h"
 #include "core/food/FoodMath.h"
 #include "mod/Log.h"
 #include "ui/gfx/Painter.h"
 #include "ui/hud/HudHooks.h"
+
+#include "beetrootskin/api/event/HUDOverlayEvent.h"
 
 namespace beetroot::features::exhaustion {
 
@@ -18,14 +21,25 @@ public:
     [[nodiscard]] ui::HudSlot slot() const override { return ui::HudSlot::BelowHunger; }
 
     void render(ui::HudContext& ctx) override {
-        bool visible = shouldDraw(ctx);
-        int  width   = visible ? core::sprites::exhaustionBarWidth(ctx.state->exhaustion) : 0;
-        logChanges(ctx, visible, width);
+        bool  visible = shouldDraw(ctx);
+        float right = 0, top = 0; // event position (AppleSkin: x = right edge of the bar, y = top)
+        if (visible) {
+            auto const& icon0 = ctx.hungerIcons[0];
+            api::HUDOverlayEvent::Exhaustion
+                ev{ctx.state->exhaustion, icon0.x + icon0.w, restingY(ctx), ctx.painter.raw()};
+            if (!api_impl::postCancellable(ev)) {
+                logChanges(ctx, false, 0, true);
+                return;
+            }
+            right = ev.x();
+            top   = ev.y();
+        }
+        int width = visible ? core::sprites::exhaustionBarWidth(ctx.state->exhaustion) : 0;
+        logChanges(ctx, visible, width, false);
         if (!visible || width <= 0) return;
 
-        auto const& right = ctx.hungerIcons[0];
-        float       x     = right.x + right.w - static_cast<float>(width);
-        float       y     = restingY(ctx);
+        float x = right - static_cast<float>(width);
+        float y = top;
         ctx.painter.texture(
             ui::textures::ICONS,
             {x, y, static_cast<float>(width), static_cast<float>(core::sprites::HUD_ICON_SIZE)},
@@ -53,11 +67,15 @@ private:
     }
 
     // State-change logging for the e2e scenario: visibility, and the fill in ~1/9 steps.
-    void logChanges(ui::HudContext const& ctx, bool visible, int width) {
-        int bucket = visible ? width / core::sprites::HUD_ICON_SIZE : -1;
+    void logChanges(ui::HudContext const& ctx, bool visible, int width, bool cancelled) {
+        int bucket = visible ? width / core::sprites::HUD_ICON_SIZE : (cancelled ? -3 : -1);
         if (bucket == mLastBucket && visible == mLastVisible) return;
         mLastBucket  = bucket;
         mLastVisible = visible;
+        if (cancelled) {
+            log().info("Exhaustion underlay: hidden (cancelled by HUDOverlayEvent::Exhaustion listener)");
+            return;
+        }
         if (!visible) {
             log().info(
                 "Exhaustion underlay: hidden (enabled={} barShown={} creative={} riding={})",

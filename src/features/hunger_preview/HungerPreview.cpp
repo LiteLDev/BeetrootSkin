@@ -3,10 +3,14 @@
 // half shank at alpha; rotten food uses the green "hunger effect" sprites).
 #include "core/food/HungerPreview.h"
 
+#include "api/Post.h"
 #include "app/Mod.h"
+#include "core/food/ApiFoodValues.h"
 #include "mod/Log.h"
 #include "ui/gfx/Painter.h"
 #include "ui/hud/HudHooks.h"
+
+#include "beetrootskin/api/event/HUDOverlayEvent.h"
 
 #include <string>
 
@@ -58,8 +62,22 @@ public:
             traceState("hidden");
             return;
         }
-        auto const& food  = ctx.held->values;
-        auto        icons = core::hungerPreviewIconList(ctx.state->hunger, food);
+        auto const& food = ctx.held->values;
+        // AppleSkin HUDOverlayEvent.HungerRestored: x = right edge of the hunger bar, y = its top.
+        float dx = 0, dy = 0;
+        if (ctx.held->stack) {
+            float x0 = ctx.hungerIcons[0].x + ctx.hungerIcons[0].w;
+            float y0 = ctx.hungerIcons[0].y - ctx.hungerJitterY[0];
+            api::HUDOverlayEvent::HungerRestored
+                ev{ctx.state->hunger, *ctx.held->stack, core::toApiFoodValues(food), x0, y0, ctx.painter.raw()};
+            if (!api_impl::postCancellable(ev)) {
+                traceState("cancelled by HUDOverlayEvent::HungerRestored listener");
+                return;
+            }
+            dx = ev.x() - x0;
+            dy = ev.y() - y0;
+        }
+        auto icons = core::hungerPreviewIconList(ctx.state->hunger, food);
         if (icons.empty()) {
             traceState("none");
             return;
@@ -77,6 +95,8 @@ public:
             if (icon.index < 0 || icon.index >= core::ICONS_PER_ROW) continue;
             core::Rect r = ctx.hungerIcons[static_cast<std::size_t>(icon.index)];
             if (!cfg.showVanillaAnimationsOverlay) r.y -= ctx.hungerJitterY[static_cast<std::size_t>(icon.index)];
+            r.x += dx;
+            r.y += dy;
             // Very faint background, then the shank (AppleSkin drawHungerOverlay).
             ctx.painter.texture(background, r, alpha * 0.25f);
             ctx.painter.texture(spriteFor(icon.sprite), r, alpha);

@@ -47,3 +47,9 @@ jobs:
           name: ${{ github.event.repository.name }}-${{ github.sha }}-client-windows-x64
           path: |
             bin/BeetrootSkin/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ github.event.repository.name }}-${{ github.sha }}-sdk-client-windows-x64
+          path: |
+            bin/BeetrootSkin-sdk/

@@ -3,10 +3,13 @@
 // - gain preview: the saturation the held food would add, flashing at the food-values alpha,
 //   starting at the current saturation's last icon.
 #include "core/food/SaturationOverlay.h"
+#include "api/Post.h"
 #include "app/Mod.h"
 #include "mod/Log.h"
 #include "ui/gfx/Painter.h"
 #include "ui/hud/HudHooks.h"
+
+#include "beetrootskin/api/event/HUDOverlayEvent.h"
 
 #include <cmath>
 #include <vector>
@@ -19,7 +22,8 @@ constexpr float ICON = static_cast<float>(core::sprites::HUD_ICON_SIZE);
 
 /// Draw `icons` over the hunger bar at `alpha`. With showVanillaAnimationsOverlay off the vanilla
 /// jitter is removed so the outlines stay still (AppleSkin only follows the shake when enabled).
-void drawIcons(ui::HudContext& ctx, std::vector<core::SaturationIcon> const& icons, float alpha) {
+/// `dx`/`dy` move the icons (a HUDOverlayEvent::Saturation listener changed x/y).
+void drawIcons(ui::HudContext& ctx, std::vector<core::SaturationIcon> const& icons, float alpha, float dx, float dy) {
     if (icons.empty() || !(alpha > 0)) return;
     bool followJitter = app::config().showVanillaAnimationsOverlay;
     for (auto const& icon : icons) {
@@ -27,6 +31,8 @@ void drawIcons(ui::HudContext& ctx, std::vector<core::SaturationIcon> const& ico
         auto       i   = static_cast<std::size_t>(icon.index);
         core::Rect dst = ctx.hungerIcons[i];
         if (!followJitter) dst.y -= ctx.hungerJitterY[i];
+        dst.x += dx;
+        dst.y += dy;
         ctx.painter.texture(
             ui::textures::ICONS,
             dst,
@@ -41,6 +47,23 @@ void drawIcons(ui::HudContext& ctx, std::vector<core::SaturationIcon> const& ico
 /// The hunger bar is drawable and the player has a hunger bar (not creative/spectator).
 bool hungerBarVisible(ui::HudContext const& ctx) {
     return ctx.hungerIconsValid && ctx.state && !ctx.state->creativeLike;
+}
+
+/// AppleSkin posts one HUDOverlayEvent.Saturation for the whole saturation overlay (current
+/// saturation and the held food's gain). The base layer (order 0) posts it every hunger draw and
+/// leaves the outcome here for the gain layer (order 20) of the same draw.
+struct SaturationEventResult {
+    bool  allowed = false;
+    float dx = 0, dy = 0;
+};
+SaturationEventResult gSaturationEvent;
+
+SaturationEventResult postSaturationEvent(ui::HudContext& ctx) {
+    float                            x0 = ctx.hungerIcons[0].x + ctx.hungerIcons[0].w; // right edge of the hunger bar
+    float                            y0 = ctx.hungerIcons[0].y - ctx.hungerJitterY[0]; // its resting top
+    api::HUDOverlayEvent::Saturation ev{ctx.state->saturation, x0, y0, ctx.painter.raw()};
+    if (!api_impl::postCancellable(ev)) return {};
+    return {true, ev.x() - x0, ev.y() - y0};
 }
 
 /// What a layer drew last (inputs in 0.01 steps), so changes are logged once, never per frame.
@@ -72,14 +95,20 @@ public:
     [[nodiscard]] int         order() const override { return 0; }
 
     void render(ui::HudContext& ctx) override {
+        gSaturationEvent = {};
         if (!app::config().showSaturationHudOverlay || !hungerBarVisible(ctx)) {
+            logChange("overlay", mLast, 0, 0, 0);
+            return;
+        }
+        gSaturationEvent = postSaturationEvent(ctx);
+        if (!gSaturationEvent.allowed) {
             logChange("overlay", mLast, 0, 0, 0);
             return;
         }
         float sat   = ctx.state->saturation;
         auto  icons = core::saturationOverlaySprites(sat, 0);
         logChange("overlay", mLast, sat, 0, icons.size());
-        drawIcons(ctx, icons, 1.f);
+        drawIcons(ctx, icons, 1.f, gSaturationEvent.dx, gSaturationEvent.dy);
     }
 
 private:
@@ -95,7 +124,10 @@ public:
 
     void render(ui::HudContext& ctx) override {
         auto const& cfg = app::config();
-        if (!cfg.showFoodValuesHudOverlay || !cfg.showSaturationHudOverlay || !hungerBarVisible(ctx) || !ctx.held) {
+        // gSaturationEvent.allowed: the base layer of this draw posted HUDOverlayEvent::Saturation
+        // (so the overlay is enabled and visible) and no listener cancelled it.
+        if (!cfg.showFoodValuesHudOverlay || !cfg.showSaturationHudOverlay || !gSaturationEvent.allowed
+            || !hungerBarVisible(ctx) || !ctx.held) {
             logChange("preview", mLast, 0, 0, 0);
             return;
         }
@@ -104,7 +136,7 @@ public:
         std::vector<core::SaturationIcon> icons;
         if (gain > 0) icons = core::saturationOverlaySprites(sat, gain);
         logChange("preview", mLast, sat, gain, icons.size());
-        drawIcons(ctx, icons, ctx.flashAlpha);
+        drawIcons(ctx, icons, ctx.flashAlpha, gSaturationEvent.dx, gSaturationEvent.dy);
     }
 
 private:

@@ -12,6 +12,12 @@ option("target_type")
     set_values("client")
 option_end()
 
+option("api_sample")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Build beetroot-api-sample, a test-only mod using BeetrootSkin's API (e2e scenario 'api'; not shipped)")
+option_end()
+
 option("tests")
     set_default(true)
     set_showmenu(true)
@@ -55,7 +61,7 @@ target("beetroot-core")
     set_exceptions("none")
     add_cxflags("/EHa")
     add_packages("nlohmann_json", {public = true})
-    add_includedirs("src", {public = true})
+    add_includedirs("src", "include", {public = true})
     add_headerfiles("src/core/**.h")
     add_files("src/core/**.cpp")
 
@@ -73,12 +79,31 @@ target("BeetrootSkin")
     add_deps("beetroot-core")
     add_packages("levilamina", "nlohmann_json")
     add_syslinks("user32")
-    add_includedirs("src")
+    add_includedirs("src", "include")
+    -- Public API (include/beetrootskin/api): BEETROOTSKIN_API = dllexport while building the mod.
+    add_defines("BEETROOTSKIN_EXPORTS")
     add_headerfiles("src/**.h")
+    add_headerfiles("include/(beetrootskin/**.h)")
     add_files("src/**.cpp|core/**.cpp")
     after_build(function (target)
         import("core.base.json")
         local bindir = path.join(os.projectdir(), "bin", target:name())
+        -- API SDK for other mods: bin/BeetrootSkin-sdk/{include/beetrootskin/**, lib/BeetrootSkin.lib}.
+        local sdkdir = path.join(os.projectdir(), "bin", target:name() .. "-sdk")
+        os.tryrm(sdkdir)
+        local incsrc = path.join(os.projectdir(), "include")
+        for _, file in ipairs(os.files(path.join(incsrc, "beetrootskin", "**.h"))) do
+            local dst = path.join(sdkdir, "include", path.relative(file, incsrc))
+            os.mkdir(path.directory(dst))
+            os.cp(file, dst)
+        end
+        local implib = path.join(path.directory(target:targetfile()), path.basename(target:targetfile()) .. ".lib")
+        if os.isfile(implib) then
+            os.mkdir(path.join(sdkdir, "lib"))
+            os.cp(implib, path.join(sdkdir, "lib"))
+        else
+            raise("import library not found: %s", implib)
+        end
         -- Merge per-unit language fragments (assets/lang/<locale>/*.json) into
         -- bin/BeetrootSkin/lang/<locale>.json next to the mod. A key defined twice
         -- (with different values) fails the build.
@@ -109,6 +134,29 @@ target("BeetrootSkin")
             end
         end
     end)
+
+-- Test-only companion mod (xmake f --api_sample=y): subscribes to BeetrootSkin's API events from
+-- another DLL, linked against BeetrootSkin's import library. Output: bin/beetroot-api-sample/.
+if has_config("api_sample") then
+    target("beetroot-api-sample")
+        add_rules("@levibuildscript/linkrule")
+        set_kind("shared")
+        beetroot_common_flags()
+        set_exceptions("none")
+        add_cxflags("/EHa")
+        add_cxflags("/EHs", {tools = {"clang_cl"}})
+        add_deps("BeetrootSkin") -- links BeetrootSkin.lib (and builds/links after it)
+        add_packages("levilamina")
+        add_includedirs("include")
+        add_files("samples/api_sample/*.cpp")
+        after_build(function (target)
+            local outdir = path.join(os.projectdir(), "bin", target:name())
+            os.tryrm(outdir)
+            os.mkdir(outdir)
+            os.cp(target:targetfile(), outdir)
+            os.cp(path.join(os.projectdir(), "samples", "api_sample", "manifest.json"), outdir)
+        end)
+end
 
 if has_config("tests") then
     target("beetroot-tests")

@@ -60,6 +60,9 @@ jobs:
           New-Item -ItemType Directory -Force bin/BeetrootSkin/textures | Out-Null
           Copy-Item assets/textures/NOTICE -Destination bin/BeetrootSkin/textures/NOTICE
           Compress-Archive -Path bin/BeetrootSkin -DestinationPath beetrootskin-client-windows-x64.zip
+          # API SDK for other mods (headers + import library), see README "API".
+          Copy-Item COPYING, COPYING.LESSER -Destination bin/BeetrootSkin-sdk/
+          Compress-Archive -Path bin/BeetrootSkin-sdk/* -DestinationPath beetrootskin-sdk-client-windows-x64.zip
 
       - name: Release notes
         shell: pwsh
@@ -75,5 +78,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
-          files: beetrootskin-client-windows-x64.zip
+          files: |
+            beetrootskin-client-windows-x64.zip
+            beetrootskin-sdk-client-windows-x64.zip
           body_path: RELEASE_NOTES.md

@@ -14,6 +14,9 @@ The project layout, rules and harness come from the sibling project BEI (same au
 | `src/ui/` | Rendering: `gfx/Painter`, `hud/HudHooks` (HUD layer contract + plumbing), `tooltip/TooltipHooks` (tooltip extension contract + plumbing), `Keys` (`isShiftDown()`). |
 | `src/app/` | `Module` registry, `Mod` (paths, `config()`, `saveConfig()`, `debugDraw()`), `I18n` (`tr()`), `KeyNames` (controls-menu names of BeetrootSkin keys). |
 | `src/mod/` | Entry point (`BeetrootSkin.cpp`), `Log.h`, `MemoryOperators.cpp`. Installs every registered module; **features never edit it**. |
+| `src/api/` | Implementation of the public API: registers the API events (`Api.cpp`, `onLoad()`), `Post.h` (`post`, `postCancellable`, cancellation logging). |
+| `include/beetrootskin/api/` | **Public API headers** for other mods (AppleSkin's API): `FoodValues.h`, `Events.h`, `event/{FoodValuesEvent,TooltipOverlayEvent,HUDOverlayEvent}.h`, `Macros.h` (`BEETROOTSKIN_API`). Copied with `BeetrootSkin.lib` to `bin/BeetrootSkin-sdk/` at build time. |
+| `samples/api_sample/` | Test-only mod using the API from another DLL (`xmake f --api_sample=y`, output `bin/beetroot-api-sample/`, e2e scenario `api`). Never shipped. |
 | `src/debug/` | Debug HUD layer + tooltip extension, active only with the `debug_draw` marker (see below). |
 | `src/features/<name>/` | One folder per feature (added by feature work). Picked up by the `src/**.cpp` glob. |
 | `assets/lang/<locale>/*.json` | Translation fragments, merged into `bin/BeetrootSkin/lang/<locale>.json` at build time. Each feature owns its own fragment file; a duplicate key fails the build. |
@@ -46,8 +49,14 @@ never change or remove existing ones); never edit `src/mod/`.
 - `core/geom/Rect.h`: `Rect` (GUI units).
 - `core/geom/IconRows.h`: `RestingRows`, `jitterOffsets`.
 - `game/Game.h`: `currentClient()`, `currentLevel()`, `currentPlayer()`, `integratedServerLevel()`.
-- `game/FoodValues.h`: `getFoodValues(ItemStackBase const&, Player const* = nullptr)`.
-- `game/PlayerFoodState.h`: `readFoodState()`, `HeldFood`, `heldFood()`.
+- `core/food/ApiFoodValues.h`: `toApiFoodValues`, `withApiFoodValues` (core <-> public `api::FoodValues`).
+- `game/FoodValues.h`: `getFoodValues(ItemStackBase const&, Player const* = nullptr)` (modified values,
+  i.e. after `api::FoodValuesEvent`), `getDefaultFoodValues(stack)` (no event), `queryFoodValues(stack,
+  player)` -> `QueriedFoodValues{defaultValues, modifiedValues}`.
+- `game/PlayerFoodState.h`: `readFoodState()`, `HeldFood` (`values` = modified, `defaultValues`,
+  `offhand`, `stack` valid for the current frame only), `heldFood()`.
+- `include/beetrootskin/api/**`: the **public API** (see below). Other mods compile against it:
+  never change or remove anything, only add (and bump `API_VERSION` only for incompatible changes).
 - `ui/gfx/Painter.h`: `Painter`, `Color`, `palette::*`, `TextureRef` (`pack()`/`mod()`),
   `textures::ICONS`, `textures::TOOLTIP_HUNGER_OUTLINE`.
 - `ui/hud/HudHooks.h`: `HudSlot`, `HudContext`, `IHudLayer`, `BS_REGISTER_HUD_LAYER(obj)`,
@@ -92,6 +101,27 @@ vanilla, restored, and then every extension's `render()` gets a `TooltipContext`
 `stack`, `box` (whole box), `text` (vanilla text content rect) and `area` (its reserved rect, full
 content width, stacked top to bottom in `order()`).
 
+### Public API (`include/beetrootskin/api`)
+
+AppleSkin's API as LeviLamina events on `ll::event::EventBus` (client thread). `src/api/Api.cpp`
+registers every event with an empty emitter in `onLoad()` (LeviLamina rejects listeners for events
+without an emitter; dependents subscribe in their `enable()`, which runs after BeetrootSkin's
+`load()` when they declare the dependency). Identity across DLLs is each class's
+`CustomEventId` string (`beetroot::api::...`), so the classes are header-only. Who posts what:
+
+- `FoodValuesEvent`: `game::queryFoodValues` (so `getFoodValues`, `heldFood()`, the tooltip and
+  every HUD preview use the modified values; tooltips lay out default vs modified).
+- `TooltipOverlayEvent::Pre` in `features/tooltip` `query()` (cancel = no extension height),
+  `::Render` in its `render()` (cancel = space kept, nothing drawn; x/y move it).
+- `HUDOverlayEvent::Exhaustion` (exhaustion layer), `::Saturation` (saturation base layer, order 0;
+  its outcome also gates/moves the gain layer, order 20, of the same draw), `::HungerRestored`
+  (hunger preview), `::HealthRestored` (health preview, only when health would rise). Positions:
+  right edge / resting top of the hunger bar; left edge / resting top of the bottom heart row.
+
+Use `api_impl::postCancellable(ev)` (logs `API: <event id> cancelled by a listener` on changes)
+when adding a cancellable event. Exported functions are marked `BEETROOTSKIN_API`
+(BeetrootSkin is built with `BEETROOTSKIN_EXPORTS`).
+
 ### Mod-owned textures
 
 `Painter::texture(TextureRef::mod("textures/icons.png"), dst, src, 256, 256, tint)` draws a
@@ -127,6 +157,7 @@ all; in a fresh pwsh:
 xmake f -a x64 -m release -p windows --target_type=client -y   # once (config is sticky)
 xmake -y                                                         # bin/BeetrootSkin/{BeetrootSkin.dll,manifest.json,lang/,textures/}
 xmake build -y beetroot-tests; xmake run beetroot-tests          # unit tests (src/core only)
+xmake f --api_sample=y -y; xmake -y                              # + bin/beetroot-api-sample (e2e `api` only)
 pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario smoke          # real game, see tools/e2e/README.md
 ```
 
