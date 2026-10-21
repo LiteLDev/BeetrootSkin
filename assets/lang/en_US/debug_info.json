@@ -1,0 +1,7 @@
+{
+  "beetroot.key.toggle_food_debug_info": "Toggle Food Debug Info",
+  "beetroot.key.toggle_food_debug_info.description": "Show or hide AppleSkin's hunger/saturation/exhaustion line",
+  "beetroot.debug_info.toggled_on": "AppleSkin debug info: on",
+  "beetroot.debug_info.toggled_off": "AppleSkin debug info: off",
+  "beetroot.debug_info.source_client": "(client)"
+}
