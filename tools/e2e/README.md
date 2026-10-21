@@ -48,7 +48,7 @@ loaded. Start food scenarios with `Reset-Player`: the game can keep player data 
 | `Drop-Hunger 3` | Hunger effect (amplifier 255) for N seconds, then clears it: about 2.5 hunger points per second after saturation is gone |
 | `Hurt-Player 6` | `/damage @s 6` |
 | `Feed-Player [level] [seconds]` | Saturation effect |
-| `Get-FoodStateLog` / `Wait-Hunger 6` | BeetrootSkin logs `Food state: hunger=.. saturation=.. exhaustion=.. health=../.. ... source=..` once after joining and on every change of hunger, saturation, health or source |
+| `Get-FoodStateLog` / `Wait-Hunger 6` | BeetrootSkin logs `Food state: hunger=.. saturation=.. exhaustion=.. health=../.. ... source=..` once after joining and on every change of hunger, saturation, health, source, peaceful or naturalRegen |
 | `Open-Inventory` / `Close-Screen` | `E` / `Esc` with waits |
 | `Invoke-Chat '/give @s oak_log 16'` | Opens chat, types, presses Enter. Cheats are on. |
 | `Move-Mouse x y -Relative`, `Click x y -Relative [-Right]`, `Scroll n` | Coordinates are fractions of the 1600x900 client area |
