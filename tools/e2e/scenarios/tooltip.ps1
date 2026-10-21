@@ -7,7 +7,7 @@ $u = 'tooltip'
 $foods = @('golden_apple', 'rotten_flesh', 'cooked_beef', 'cake', 'suspicious_stew', 'enchanted_golden_apple', 'dried_kelp')
 $SlotX0 = 0.50; $SlotDX = 0.034; $SlotY = 0.72   # survival inventory hotbar at 1600x900
 $script:ChestSlotX = 0.36; $script:ChestSlotY = 0.30        # first chest slot
-$script:CreativeSlotX = 0.50; $script:CreativeSlotY = 0.80  # creative hotbar slot 1
+$script:CreativeSlotX = 0.365; $script:CreativeSlotY = 0.80 # creative hotbar slot 1 (below the item list)
 
 function Hover-WithShift([double]$x, [double]$y, [string]$name) {
     Move-Mouse $x $y -Relative
