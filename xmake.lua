@@ -148,7 +148,7 @@ if has_config("api_sample") then
         add_deps("BeetrootSkin") -- links BeetrootSkin.lib (and builds/links after it)
         add_packages("levilamina")
         add_includedirs("include")
-        add_files("samples/api_sample/*.cpp")
+        add_files("samples/api_sample/*.cpp", "src/mod/MemoryOperators.cpp") -- LeviLamina requires its allocator
         after_build(function (target)
             local outdir = path.join(os.projectdir(), "bin", target:name())
             os.tryrm(outdir)
