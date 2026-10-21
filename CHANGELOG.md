@@ -16,9 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hunger-restored HUD preview: the shanks the held food (main hand, or offhand) would fill flash on the hunger bar, green for rotten food (AppleSkin `showFoodValuesHudOverlay`).
 - Food debug info: AppleSkin's `hunger: N, sat: #.##, exh: 0.00/4` line, drawn at the top left of the HUD (above the vanilla position/day text and chat) when `showFoodDebugInfo` is on, and a remappable hotkey (default F6, listed in Settings > Keyboard & Mouse) that toggles and saves it.
 - Health-restored HUD preview: while holding food, the hearts that eating it would restore (Bedrock natural regeneration after eating plus the food's Regeneration effect) flash over the health bar, like AppleSkin's HealthRestored overlay.
+- Live config reload, like AppleSkin: `config/config.json` can be edited while the game runs and changes apply within about a second (logged as `Config reloaded: ...`). Invalid JSON keeps the current settings with one warning and the file is left untouched; the mod's own saves (`F6`) are not reloaded, a save right after an edit merges the edit in, and a save over invalid content first copies it to `config.json.bak`.
 - Saturation HUD overlay: golden outlines over the hunger shanks show the current saturation, and the saturation the held food would add flashes on top of them.
+
 ### Fixed
 
+- README: `showFoodValuesInTooltipAlways` works without `showFoodValuesInTooltip` (as in AppleSkin and the code); the table said it needed it.
 - HUD overlays follow (or, with `showVanillaAnimationsOverlay` off, ignore) the vanilla hunger-bar shake correctly: the jitter is measured from a resting line learned from still frames instead of the highest shank of the frame (wrong while every shank shakes at saturation 0).
 - Heart jitter (vanilla low-health shake) is now reported to HUD layers, so the health preview honors `showVanillaAnimationsOverlay`.
 - Textured quads of different textures recorded between two flushes all draw correctly (the Painter splits its batches per texture); the food tooltip no longer flushes after every quad.
