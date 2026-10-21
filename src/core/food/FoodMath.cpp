@@ -40,7 +40,7 @@ FoodValues FoodValues::make(int nutrition, float modifier, bool canAlwaysEat) {
 }
 
 bool canEat(FoodState const& state, FoodValues const& food) noexcept {
-    return state.creativeLike || food.canAlwaysEat || state.hunger < MAX_HUNGER;
+    return state.creativeLike || state.peaceful || food.canAlwaysEat || state.hunger < MAX_HUNGER;
 }
 
 EatResult eat(FoodState const& state, FoodValues const& food) noexcept {

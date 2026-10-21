@@ -54,6 +54,17 @@ TEST(CanEat, FullBarOnlyWithCanAlwaysEatOrCreative) {
     EXPECT_TRUE(canEat(creative, food));
 }
 
+TEST(CanEat, PeacefulCanAlwaysEat) {
+    // Bedrock (unlike Java) lets players on Peaceful eat any food with a full hunger bar.
+    auto food         = FoodValues::make(8, 0.8f);
+    auto peaceful     = hungry(20);
+    peaceful.peaceful = true;
+    EXPECT_TRUE(canEat(peaceful, food));
+    peaceful.hunger = 5;
+    EXPECT_TRUE(canEat(peaceful, food));
+    EXPECT_FALSE(canEat(hungry(20), food));
+}
+
 TEST(Eat, HungerCappedAndSaturationCappedByNewHunger) {
     auto r = eat(hungry(10, 2), FoodValues::make(8, 0.8f)); // steak: +8, +12.8
     EXPECT_EQ(r.newHunger, 18);

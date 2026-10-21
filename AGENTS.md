@@ -9,7 +9,7 @@ The project layout, rules and harness come from the sibling project BEI (same au
 
 | Path | What it is |
 | ---- | ---------- |
-| `src/core/` | Pure C++ logic, **no `mc/` or `ll/` includes**. Static lib `beetroot-core`, unit-tested on the host. `food/FoodMath` (Bedrock hunger/saturation/regen math, flash animation, AppleSkin sprite math), `food/HealthPreview` (health-restored overlay plan, `restingIconY`), `state/Config` (+`AtomicWrite`), `geom/Rect`. |
+| `src/core/` | Pure C++ logic, **no `mc/` or `ll/` includes**. Static lib `beetroot-core`, unit-tested on the host. `food/FoodMath` (Bedrock hunger/saturation/regen math, flash animation, AppleSkin sprite math), `food/HealthPreview` (health-restored overlay plan, `restingIconY`), `state/Config` (+`AtomicWrite`), `geom/Rect`, `geom/IconRows` (`RestingRows`: resting line of a shaking HUD icon bar). |
 | `src/game/` | Adapters from game objects to core structs: `Game` (client/player/level helpers), `FoodValues` (item -> `core::FoodValues`), `PlayerFoodState` (local player -> `core::FoodState`, held food). |
 | `src/ui/` | Rendering: `gfx/Painter`, `hud/HudHooks` (HUD layer contract + plumbing), `tooltip/TooltipHooks` (tooltip extension contract + plumbing), `Keys` (`isShiftDown()`). |
 | `src/app/` | `Module` registry, `Mod` (paths, `config()`, `saveConfig()`, `debugDraw()`), `I18n` (`tr()`), `KeyNames` (controls-menu names of BeetrootSkin keys). |
@@ -44,6 +44,7 @@ never change or remove existing ones); never edit `src/mod/`.
 - `core/food/VanillaFoods.h`: `vanillaFoodEffects(itemId)`, `anyHarmful(effects)`.
 - `core/state/Config.h`: `Config` with AppleSkin's option names.
 - `core/geom/Rect.h`: `Rect` (GUI units).
+- `core/geom/IconRows.h`: `RestingRows`, `jitterOffsets`.
 - `game/Game.h`: `currentClient()`, `currentLevel()`, `currentPlayer()`, `integratedServerLevel()`.
 - `game/FoodValues.h`: `getFoodValues(ItemStackBase const&, Player const* = nullptr)`.
 - `game/PlayerFoodState.h`: `readFoodState()`, `HeldFood`, `heldFood()`.
@@ -66,14 +67,18 @@ gets a fresh `HudContext`:
 - `slot`, `control` (owner UIControl rect);
 - `hungerIcons[10]` (9x9 GUI rects, **index 0 = rightmost shank**, i.e. hunger 1-2, like
   AppleSkin's icon index), `hungerIconsValid`, `hungerJitterY[10]` (vanilla jitter offset, already
-  included in the rects);
-- `heartIcons` / `heartJitterY` (index 0 = leftmost heart of the bottom row);
+  included in the rects; subtract it to draw at rest when `showVanillaAnimationsOverlay` is off);
+- `heartIcons` / `heartJitterY` (index 0 = leftmost heart of the bottom row; jitter = low-health shake);
 - `state` (`readFoodState()`), `held` (`heldFood()`), `flashAlpha` (FlashAnimator x
   `maxHudOverlayFlashAlpha`, advanced on `ClientLevelTickEvent`, reset when nothing is held),
   `clientTick`.
 
 Rects come from the renderers' `mIconPosition` (relative to the owner control's
 `mCachedPosition`); verified in-game to match the vanilla icons at 1600x900, GUI scale 3.
+Vanilla writes the shaken y straight into `mIconPosition` and keeps no resting layout, so the
+jitter is measured against a resting line per row learned from still frames
+(`core::RestingRows`, reset when the owner control moves; row 0 falls back to the control origin,
+where both bars rest).
 
 ### Tooltips (`ui/tooltip/TooltipHooks.h`)
 
@@ -176,6 +181,9 @@ needs at least one commit to build.
 **Rendering**
 - In the UI pass: rectangles/images -> `flushImages`, item icons, text -> `flushText`.
   `ui::Painter` does this; call `painter.flush()` between z bands.
+- One `flushImages` call draws its quads with one texture: quads of several textures recorded
+  into one batch draw partly/wrongly. `Painter` ends a batch whenever the texture or tint changes
+  (submission order is kept), so layers can mix textures without flushing per quad.
 - Coordinates are GUI units. Mouse pixels x `GuiData::mInvGuiScale` = GUI units.
 
 **Food data**

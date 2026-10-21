@@ -102,8 +102,9 @@ struct FoodState {
     friend bool operator==(FoodState const&, FoodState const&) = default;
 };
 
-/// Java/AppleSkin canEat: creative-like players and canAlwaysEat foods can always eat,
-/// everybody else only while the hunger bar is not full.
+/// Bedrock canEat: creative-like players, players on Peaceful (Bedrock lets them eat any food at
+/// any time, unlike Java) and canAlwaysEat foods can always eat, everybody else only while the
+/// hunger bar is not full.
 [[nodiscard]] bool canEat(FoodState const& state, FoodValues const& food) noexcept;
 
 /// Result of eating `food` in `state`.

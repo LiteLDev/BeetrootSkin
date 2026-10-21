@@ -4,6 +4,7 @@
 
 #include "app/Mod.h"
 #include "app/Module.h"
+#include "core/geom/IconRows.h"
 #include "mod/Log.h"
 #include "ui/gfx/Painter.h"
 
@@ -93,16 +94,44 @@ void runLayers(HudSlot slot, MinecraftUIRenderContext& ctx, core::Rect const& co
     }
 }
 
+/// Resting lines of the two bars, learned from still frames (see core::RestingRows). Vanilla
+/// lays the first row out at the owner control's origin (calibration logs: icon y 0 at rest for
+/// both bars), which is the fallback until a still frame has been seen.
+core::RestingRows gHungerRest;
+core::RestingRows gHeartRest;
+constexpr float   ROW0_REST_Y = 0;
+
+/// Logs the range of jitter offsets seen for a bar whenever it widens (never per frame), as
+/// evidence of vanilla's shake for the e2e harness. Only offsets measured against a learned
+/// resting line count (not the fallback).
+struct JitterRange {
+    float lo = 0, hi = 0;
+    template <class Offsets>
+    void observe(char const* bar, core::RestingRows const& rest, Offsets const& offsets) {
+        if (!rest.learned(0)) return;
+        float newLo = lo, newHi = hi;
+        for (float o : offsets) newLo = std::min(newLo, o), newHi = std::max(newHi, o);
+        if (newLo == lo && newHi == hi) return;
+        lo = newLo, hi = newHi;
+        log().info("{} jitter seen: offsets {}..{}", bar, lo, hi);
+    }
+};
+JitterRange gHungerRange, gHeartRange;
+
 /// Hunger icons from the renderer's per-icon positions (relative to the owner control).
 /// Vanilla fills mIconPosition[i] for shank i counted from the right.
 void updateHungerLayout(HudHungerRenderer const& r, core::Rect const& control) {
-    auto const& pos  = r.mIconPosition.get();
-    float       minY = pos[0].y;
-    for (auto const& p : pos) minY = std::min(minY, p.y);
+    auto const&       pos = r.mIconPosition.get();
+    static core::Rect restFor{};
+    if (control != restFor) gHungerRest.reset(), restFor = control;
+    static std::vector<float> ys(pos.size());
+    for (std::size_t i = 0; i < pos.size(); ++i) ys[i] = pos[i].y;
+    auto const& rest = gHungerRest.update(ys, core::ICONS_PER_ROW, ROW0_REST_Y);
     for (std::size_t i = 0; i < pos.size(); ++i) {
         gHungerIcons[i]  = {control.x + pos[i].x, control.y + pos[i].y, ICON, ICON};
-        gHungerJitter[i] = pos[i].y - minY;
+        gHungerJitter[i] = ys[i] - rest[i];
     }
+    gHungerRange.observe("Hunger", gHungerRest, gHungerJitter);
     gHungerValid = true;
     // Calibration log: on layout changes (without jitter) only.
     static core::Rect lastControl{};
@@ -125,13 +154,20 @@ void updateHungerLayout(HudHungerRenderer const& r, core::Rect const& control) {
 }
 
 void updateHeartLayout(HudHeartRenderer const& r, core::Rect const& control) {
-    auto const& pos = r.mIconPosition.get();
+    auto const&       pos = r.mIconPosition.get();
+    static core::Rect restFor{};
+    if (control != restFor) gHeartRest.reset(), restFor = control;
+    static std::vector<float> ys;
+    ys.resize(pos.size());
+    for (std::size_t i = 0; i < pos.size(); ++i) ys[i] = pos[i].y;
+    auto const& rest = gHeartRest.update(ys, core::ICONS_PER_ROW, ROW0_REST_Y);
     gHeartIcons.resize(pos.size());
     gHeartJitter.resize(pos.size());
     for (std::size_t i = 0; i < pos.size(); ++i) {
         gHeartIcons[i]  = {control.x + pos[i].x, control.y + pos[i].y, ICON, ICON};
-        gHeartJitter[i] = 0;
+        gHeartJitter[i] = ys[i] - rest[i];
     }
+    gHeartRange.observe("Heart", gHeartRest, gHeartJitter);
     static std::size_t lastCount = static_cast<std::size_t>(-1);
     static core::Rect  lastControl{};
     if (pos.size() != lastCount || control != lastControl) {

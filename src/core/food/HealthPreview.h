@@ -40,8 +40,8 @@ struct HealthPreviewPlan {
 [[nodiscard]] HealthPreviewPlan healthPreviewPlan(FoodState const& state, FoodValues const& food);
 
 /// Resting (un-jittered) y of each icon of a bar laid out in rows of `perRow` icons: the smallest
-/// y of the icon's row (best effort: a row whose icons are all shaken keeps its shake). Meant for
-/// filling ui::HudContext::heartJitterY (vanilla shakes hearts at low health).
+/// y of the icon's row (best effort: a row whose icons are all shaken keeps its shake). The HUD
+/// hooks use core::RestingRows (core/geom/IconRows.h) instead, which learns the line over frames.
 [[nodiscard]] std::vector<float> restingIconY(std::vector<float> const& ys, int perRow = ICONS_PER_ROW);
 
 } // namespace beetroot::core
