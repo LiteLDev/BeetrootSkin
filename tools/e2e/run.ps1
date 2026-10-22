@@ -34,13 +34,15 @@ try {
     Disable-OtherMods
     if (-not $NoDeploy) { Deploy-Mod }
     Restore-TestWorld
+    $script:Unit = $Scenario
     # Optional scenarios\<name>.prelaunch.ps1, e.g. to seed mods\BeetrootSkin\config before the mod loads.
     $prelaunch = Join-Path $PSScriptRoot "scenarios/$Scenario.prelaunch.ps1"
     if (Test-Path $prelaunch) { . $prelaunch }
     Start-Game | Out-Null
     Wait-GameReady
-    Enter-TestWorld
-    $script:Unit = $Scenario
+    # A prelaunch script may replace the world entry, e.g. remote.prelaunch.ps1:
+    # Start-Bds; $script:EnterWorld = { Join-Bds }.
+    if ($script:EnterWorld) { . $script:EnterWorld } else { Enter-TestWorld }
     . $scenarioFile
     Assert-NoErrors
     Write-Step "scenario '$Scenario' PASSED"
@@ -51,7 +53,12 @@ try {
     Get-LeviLog | Select-Object -Last 40 | ForEach-Object { Write-Host "  | $_" }
 } finally {
     if (-not $KeepOpen) {
-        Stop-Game
+        try { Stop-Game } catch { Write-Host "[e2e] stopping the game failed: $_" -ForegroundColor Red }
+    }
+    # The dedicated server (if the scenario started one) always stops: its console pipes belong to
+    # this process, so it could not outlive it usefully, not even with -KeepOpen.
+    try { Stop-Bds } catch { Write-Host "[e2e] stopping BDS failed: $_" -ForegroundColor Red }
+    if (-not $KeepOpen) {
         # Optional scenarios\<name>.restore.ps1 undoes what the prelaunch script changed.
         $restore = Join-Path $PSScriptRoot "scenarios/$Scenario.restore.ps1"
         if (Test-Path $restore) { & pwsh -NoProfile -File $restore }

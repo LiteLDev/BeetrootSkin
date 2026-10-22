@@ -17,9 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Food debug info: AppleSkin's `hunger: N, sat: #.##, exh: 0.00/4` line, drawn at the top left of the HUD (above the vanilla position/day text and chat) when `showFoodDebugInfo` is on, and a remappable hotkey (default F6, listed in Settings > Keyboard & Mouse) that toggles and saves it.
 - Health-restored HUD preview: while holding food, the hearts that eating it would restore (Bedrock natural regeneration after eating plus the food's Regeneration effect) flash over the health bar, like AppleSkin's HealthRestored overlay.
 - Saturation HUD overlay: golden outlines over the hunger shanks show the current saturation, and the saturation the held food would add flashes on top of them.
+- Remote-server end-to-end test (`remote` scenario): the harness fetches the official Bedrock Dedicated Server (`tools/e2e/get-bds.ps1`), starts and stops it (`Start-Bds`, `Stop-Bds`, console commands via `Invoke-BdsCommand`) and joins it through the Servers tab; every BeetrootSkin feature is verified there from the server-synced client state.
 - Public API for other LeviLamina mods, a port of AppleSkin's: `FoodValuesEvent` (change the food values every display uses; tooltips show default vs modified), `TooltipOverlayEvent::{Pre, Render}` and `HUDOverlayEvent::{Exhaustion, Saturation, HungerRestored, HealthRestored}` (cancellable, movable), as LeviLamina events; headers and import library in `bin/BeetrootSkin-sdk/`.
+
 ### Fixed
 
+- Sync diagnostics no longer forget the attribute and game-rule updates a remote server sends before the client's join event (the session state is now reset only on leaving).
+- The debug drawing (`src/debug/DebugDraw.cpp`, used by the `smoke` scenario) is now in the repository: `.gitignore`'s Visual Studio `[Dd]ebug/` rule had kept it out, so `smoke` failed on a clean checkout.
 - HUD overlays follow (or, with `showVanillaAnimationsOverlay` off, ignore) the vanilla hunger-bar shake correctly: the jitter is measured from a resting line learned from still frames instead of the highest shank of the frame (wrong while every shank shakes at saturation 0).
 - Heart jitter (vanilla low-health shake) is now reported to HUD layers, so the health preview honors `showVanillaAnimationsOverlay`.
 - Textured quads of different textures recorded between two flushes all draw correctly (the Painter splits its batches per texture); the food tooltip no longer flushes after every quad.
