@@ -156,10 +156,12 @@ pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario remote
   websocket at: wss://signaling-...` every few seconds while BDS still reports "Signed in to signaling
   service successfully". `remote.prelaunch.ps1` therefore sets `$script:ExclusiveSignaling = $true`.
   LeviHeadlessInput's shim then holds `%APPDATA%\levilauncher.exe\e2e-signaling.lock` exclusively
-  from Start-Game to Stop-Game, blocking new headless games and waiting for running ones. Games
-  outside that lock (BEI's foreground harness, LeviLamina dedicated servers started by other
-  projects' e2e runs, a game you play yourself) still interfere: run `remote` while none of
-  them are online. Neither the firewall nor binding BDS to 0.0.0.0 made a difference. The
+  from Start-Game to Stop-Game, blocking new headless games, and after acquiring it waits until no
+  `Minecraft.Windows` process is left at all (it logs which ones it waits for). That also covers
+  games outside the lock that already run (BEI's foreground harness, a run started with an older
+  shim, a game you play yourself); one started *during* the scenario still breaks it. Dedicated
+  servers (`bedrock_server`, `bedrock_server_mod`) sign in as servers, not with the user's sign-in
+  ID, and do not interfere. Neither the firewall nor binding BDS to 0.0.0.0 made a difference. The
   `minecraft://connect/?serverUrl=...` deep link is **not usable**: on this machine it is handled
   by the Microsoft Store install of Minecraft (a different, unmodded version), not by the
   LeviLauncher instance. The added server-list entry is removed again by `Remove-BdsServerEntries`
