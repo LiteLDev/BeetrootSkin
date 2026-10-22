@@ -74,6 +74,9 @@ try {
     Remove-HeadlessInputMod   # leftover of a killed or -KeepOpen run
     if ($script:Headless) { Install-HeadlessInputMod -ModsDir $script:ModsDir -PipeName $script:HeadlessPipe }
     Restore-TestWorld
+    # Single-player test world: games of all slots share one signaling-service ID, and worlds
+    # opened for multiplayer knock each other out ("An error has occurred", "Blaze").
+    if ($script:Headless) { Set-WorldSinglePlayer (Join-Path (Get-WorldsDir) $script:WorldName) }
     $script:Unit = $Scenario
     # Optional scenarios\<name>.prelaunch.ps1, e.g. to seed mods\BeetrootSkin\config before the mod loads.
     $prelaunch = Join-Path $PSScriptRoot "scenarios/$Scenario.prelaunch.ps1"
