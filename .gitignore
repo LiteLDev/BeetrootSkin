@@ -552,3 +552,5 @@ fabric.properties
 
 # BeetrootSkin
 /tools/e2e/out/
+# The VisualStudio [Dd]ebug/ rule above would hide the debug-drawing sources.
+!/src/debug/

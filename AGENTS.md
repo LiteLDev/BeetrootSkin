@@ -234,6 +234,16 @@ needs at least one commit to build.
   the client-attribute path is accurate on remote servers too; no exhaustion estimate is needed
   (the client also predicts exhaustion locally: it can briefly read above 4 until the server's
   saturation/hunger step arrives one tick later).
+- Verified against a real **Bedrock Dedicated Server 1.26.51.1** (official build matching the
+  1.26.51.01 client; e2e scenario `remote`, see `tools/e2e/README.md`): the food state comes from
+  the client attributes (`source=client`, `exact=false`) and follows server-side `/effect hunger`,
+  `/damage`, eating (cooked beef: +8 hunger, saturation +12.8 capped at hunger), sprinting
+  (exhaustion), Health Boost (max health 40, two heart rows), `/gamerule naturalregeneration false`
+  (GameRulesChangedPacket carries only the changed rule; health preview hides) and `/difficulty
+  peaceful` (SetDifficultyPacket). Tooltips, previews, saturation overlay, exhaustion underlay and
+  the debug line (`(client)`) all work there. On a remote server the client level ticks and the
+  first UpdateAttributes/GameRulesChanged/SetDifficulty packets arrive **before**
+  `ClientJoinLevelEvent`: don't reset per-session state on join (reset on exit).
 - Look game rules up by name (`GameRule::mName`, e.g. `naturalRegeneration`, case-insensitive),
   not by `GameRulesIndex`: index 20 (`DoNaturalRegeneration`) read `true` after
   `/gamerule naturalregeneration false` on 1.26.51.
