@@ -4,6 +4,8 @@
 
 #include <optional>
 
+class ItemStackBase;
+
 namespace beetroot::game {
 
 /// The local player's hunger/saturation/exhaustion/health and related flags, or nullopt when
@@ -31,8 +33,13 @@ void               setForceClientSource(bool force);
 
 /// Food the local player holds, as AppleSkin picks it.
 struct HeldFood {
-    core::FoodValues values;
+    core::FoodValues values;          ///< Modified values (after api::FoodValuesEvent).
     bool             offhand = false; ///< Taken from the offhand slot.
+    /// The held stack in the player's inventory. Only valid during the current frame / tick (do
+    /// not keep it); null when unknown.
+    ItemStackBase const* stack = nullptr;
+    /// The item's own values (before FoodValuesEvent listeners changed them).
+    core::FoodValues defaultValues;
 };
 /// Main hand first; then the offhand if Config::showFoodValuesHudOverlayWhenOffhand.
 /// nullopt when neither hand holds food or not in a world. Client thread.

@@ -2,10 +2,14 @@
 // would restore (natural regeneration after eating + the food's Regeneration effect, Bedrock
 // rules, see core/food/HealthPreview.h) on top of the vanilla hearts.
 #include "core/food/HealthPreview.h"
+#include "api/Post.h"
 #include "app/Mod.h"
+#include "core/food/ApiFoodValues.h"
 #include "mod/Log.h"
 #include "ui/gfx/Painter.h"
 #include "ui/hud/HudHooks.h"
+
+#include "beetrootskin/api/event/HUDOverlayEvent.h"
 
 #include <cmath>
 #include <optional>
@@ -73,6 +77,24 @@ public:
         auto const&             cfg = app::config();
         core::HealthPreviewPlan plan;
         if (cfg.showFoodHealthHudOverlay && ctx.held) plan = core::healthPreviewPlan(*ctx.state, ctx.held->values);
+        // AppleSkin HUDOverlayEvent.HealthRestored: only when the estimate exceeds the current
+        // health; x = left edge of the hearts, y = top of their bottom row (resting).
+        float dx = 0, dy = 0;
+        if (!plan.icons.empty() && !ctx.heartIcons.empty() && ctx.held && ctx.held->stack) {
+            float x0 = ctx.heartIcons[0].x;
+            float y0 = ctx.heartIcons[0].y - (ctx.heartJitterY.empty() ? 0.f : ctx.heartJitterY[0]);
+            api::HUDOverlayEvent::HealthRestored ev{
+                plan.newHealth,
+                *ctx.held->stack,
+                core::toApiFoodValues(ctx.held->values),
+                x0,
+                y0,
+                ctx.painter.raw()
+            };
+            if (!api_impl::postCancellable(ev)) plan = {};
+            dx = ev.x() - x0;
+            dy = ev.y() - y0;
+        }
         logPlan(*ctx.state, plan);
         if (plan.icons.empty() || ctx.heartIcons.empty() || !(ctx.flashAlpha > 0)) return;
 
@@ -87,6 +109,8 @@ public:
             // The rects include vanilla's low-health shake; follow it only with
             // showVanillaAnimationsOverlay (AppleSkin), else draw at the resting position.
             if (!cfg.showVanillaAnimationsOverlay && i < ctx.heartJitterY.size()) rect.y -= ctx.heartJitterY[i];
+            rect.x += dx;
+            rect.y += dy;
             // Very faint container, then the heart (AppleSkin drawHealthOverlay).
             ctx.painter.texture(HEART_CONTAINER, rect, alpha * 0.25f);
             ctx.painter.texture(icon.half ? half : full, rect, alpha);

@@ -70,6 +70,12 @@ mod folder): outlines of every HUD icon rect, AppleSkin sprites from the mod-own
 a magenta area reserved in item tooltips, plus `Debug: held food ...` / `Debug: hovered ...` log
 lines with the parsed food values.
 
+Test-only companion mods (listed in `$script:TestOnlyMods`, built from this repository into
+`bin\<name>`) are deployed by a scenario's `.prelaunch.ps1` with `Deploy-ExtraMod <name>` and
+removed by its `.restore.ps1` with `Remove-ExtraMod <name>`; a leftover from an interrupted run is
+deleted by the next run. The `api` scenario uses `beetroot-api-sample`
+(`xmake f --api_sample=y; xmake`).
+
 ## Notes and pitfalls
 
 - **Elevated windows block injected input.** While a UAC prompt or a Windows Firewall
