@@ -21,7 +21,8 @@ pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario smoke -KeepOpen   # leave the 
    moves every other mod folder (e.g. `mods\BEI`) to `mods-disabled\` (always moved back in `finally`).
 3. Deploys `bin\BeetrootSkin` to `mods\BeetrootSkin` (keeps `config\`).
 4. Restores the `BeetrootSkin-Test` world from `fixtures\BeetrootSkin-Test.zip` (survival, normal
-   difficulty, cheats on, always day, flat) and marks it as just played so it is the first world.
+   difficulty, cheats on, always noon; mob spawning is switched off in its `level.dat`, since
+   zombies spawn in the shade of its trees) and marks it as just played so it is the first world.
 5. Runs the optional `scenarios\<name>.prelaunch.ps1`.
 6. Launches the game through LeviLauncher and waits for `BeetrootSkin enabled`.
 7. Enters the world and waits for `BeetrootSkin: joined level` plus a `Food state: ... source=integrated-server`

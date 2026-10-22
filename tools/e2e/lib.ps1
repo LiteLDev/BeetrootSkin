@@ -349,6 +349,19 @@ function Set-WorldLastPlayed([string]$WorldDir) {
     }
 }
 
+# Set a byte (boolean) game rule in level.dat, e.g. Set-WorldByteRule $dir 'domobspawning' 0.
+function Set-WorldByteRule([string]$WorldDir, [string]$Rule, [byte]$Value) {
+    foreach ($f in 'level.dat', 'level.dat_old') {
+        $path = Join-Path $WorldDir $f
+        if (-not (Test-Path $path)) { continue }
+        $b = [System.Collections.Generic.List[byte]]::new([IO.File]::ReadAllBytes($path))
+        $p = Find-NbtTag $b 1 $Rule
+        if ($p -lt 0) { Write-Step "warning: game rule $Rule not found in $path"; continue }
+        $b[$p] = $Value
+        [IO.File]::WriteAllBytes($path, $b.ToArray())
+    }
+}
+
 function Restore-TestWorld {
     $zip = Join-Path $script:RepoRoot "tools\e2e\fixtures\$script:WorldName.zip"
     if (-not (Test-Path $zip)) { Write-Step "no world fixture, skipping restore"; return }
@@ -361,6 +374,9 @@ function Restore-TestWorld {
     $target = Join-Path $worlds $script:WorldName
     Expand-Archive -Path $zip -DestinationPath $target -Force
     Set-WorldLastPlayed $target
+    # The fixture is a normal (forested) world at a fixed noon: zombies still spawn in the shade
+    # of trees and killed the player mid-scenario (saturation run "slain by Zombie"). No mobs.
+    Set-WorldByteRule $target 'domobspawning' 0
     Write-Step "restored world fixture to $target"
 }
 
