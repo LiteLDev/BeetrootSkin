@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Health-restored HUD preview: while holding food, the hearts that eating it would restore (Bedrock natural regeneration after eating plus the food's Regeneration effect) flash over the health bar, like AppleSkin's HealthRestored overlay.
 - Saturation HUD overlay: golden outlines over the hunger shanks show the current saturation, and the saturation the held food would add flashes on top of them.
 - Remote-server end-to-end test (`remote` scenario): the harness fetches the official Bedrock Dedicated Server (`tools/e2e/get-bds.ps1`), starts and stops it (`Start-Bds`, `Stop-Bds`, console commands via `Invoke-BdsCommand`) and joins it through the Servers tab; every BeetrootSkin feature is verified there from the server-synced client state.
+- Public API for other LeviLamina mods, a port of AppleSkin's: `FoodValuesEvent` (change the food values every display uses; tooltips show default vs modified), `TooltipOverlayEvent::{Pre, Render}` and `HUDOverlayEvent::{Exhaustion, Saturation, HungerRestored, HealthRestored}` (cancellable, movable), as LeviLamina events; headers and import library in `bin/BeetrootSkin-sdk/`.
 
 ### Fixed
 

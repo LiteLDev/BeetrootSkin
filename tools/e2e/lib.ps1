@@ -24,6 +24,11 @@ $script:WorldName    = 'BeetrootSkin-Test'
 # interfere. mods-disabled\ belongs to this harness: whatever is in it gets restored.
 $script:KeepMods         = @('LeviLamina', $script:ModName)
 $script:DisabledModsDir  = Join-Path $script:VersionDir 'mods-disabled'
+# Test-only companion mods built from this repository (bin\<name>, e.g. beetroot-api-sample from
+# `xmake f --api_sample=y`). Scenarios deploy them with Deploy-ExtraMod in their prelaunch script
+# and remove them with Remove-ExtraMod in their restore script; Disable-OtherMods deletes a
+# leftover of an interrupted run instead of parking it in mods-disabled\.
+$script:TestOnlyMods     = @('beetroot-api-sample')
 
 if (-not ('BsE2E.Native' -as [type])) {
     Add-Type -AssemblyName System.Drawing
@@ -174,6 +179,11 @@ function Disable-OtherMods {
     New-Item -ItemType Directory -Force $script:DisabledModsDir | Out-Null
     foreach ($dir in @(Get-ChildItem $script:ModsDir -Directory)) {
         if ($script:KeepMods -contains $dir.Name) { continue }
+        if ($script:TestOnlyMods -contains $dir.Name) {
+            Remove-Item -Recurse -Force $dir.FullName
+            Write-Step "removed leftover test-only mod $($dir.Name)"
+            continue
+        }
         $dst = Join-Path $script:DisabledModsDir $dir.Name
         if (Test-Path $dst) {
             # Leftover from an interrupted run while the mod was redeployed: keep it aside.
@@ -184,6 +194,33 @@ function Disable-OtherMods {
         Move-Item $dir.FullName $dst
         Write-Step "disabled mod $($dir.Name) for this run"
     }
+}
+
+# Deploy a test-only companion mod (bin\<Name>, see $script:TestOnlyMods) to mods\<Name>. Call it
+# from a scenario's .prelaunch.ps1 (after Disable-OtherMods) and pair it with Remove-ExtraMod in
+# the scenario's .restore.ps1.
+function Deploy-ExtraMod([Parameter(Mandatory)][string]$Name) {
+    if ($script:TestOnlyMods -notcontains $Name) { throw "$Name is not listed in `$script:TestOnlyMods" }
+    $bin = Join-Path $script:RepoRoot "bin\$Name"
+    if (-not (Test-Path (Join-Path $bin 'manifest.json'))) {
+        throw "Build output not found: $bin (xmake f --api_sample=y, then xmake)"
+    }
+    $dest = Join-Path $script:ModsDir $Name
+    if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+    Copy-Item -Recurse -Force $bin $dest
+    Write-Step "deployed test-only mod $bin -> $dest"
+}
+
+# Remove a test-only companion mod deployed by Deploy-ExtraMod (retries while the game still
+# holds the DLL open for a moment after closing).
+function Remove-ExtraMod([Parameter(Mandatory)][string]$Name) {
+    if ($script:TestOnlyMods -notcontains $Name) { throw "$Name is not listed in `$script:TestOnlyMods" }
+    $dest = Join-Path $script:ModsDir $Name
+    for ($i = 0; $i -lt 10 -and (Test-Path $dest); $i++) {
+        try { Remove-Item -Recurse -Force $dest -ErrorAction Stop } catch { Start-Sleep -Seconds 2 }
+    }
+    if (Test-Path $dest) { Write-Host "[e2e] FAILED to remove $dest; delete it by hand" -ForegroundColor Red }
+    else { Write-Step "removed test-only mod $Name" }
 }
 
 # Move everything Disable-OtherMods put aside back into mods\.
@@ -484,7 +521,7 @@ function Wait-NewLogLine([string]$pattern, [int]$After, [int]$TimeoutSeconds = 1
 }
 
 function Assert-NoErrors {
-    $bad = Get-LeviLog | Select-String -Pattern ' (ERR|FTL)\]\[(BeetrootSkin|LeviLamina|CrashLogger)\]'
+    $bad = Get-LeviLog | Select-String -Pattern ' (ERR|FTL)\]\[(BeetrootSkin|LeviLamina|CrashLogger|beetroot-api-sample)\]'
     if ($bad) { $bad | ForEach-Object { Write-Host "  $($_.Line)" }; throw "Errors found in LeviLamina log" }
     Write-Step "no BeetrootSkin errors in log"
 }

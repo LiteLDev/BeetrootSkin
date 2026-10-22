@@ -3,13 +3,17 @@
 // Shown for edible items when (showFoodValuesInTooltip && Shift is held) ||
 // showFoodValuesInTooltipAlways. Layout and sprite selection live in core/food/TooltipLayout;
 // this file only maps them onto Bedrock textures.
+#include "api/Post.h"
 #include "app/Mod.h"
+#include "core/food/ApiFoodValues.h"
 #include "core/food/FoodMath.h"
 #include "core/food/TooltipLayout.h"
 #include "game/FoodValues.h"
 #include "ui/Keys.h"
 #include "ui/gfx/Painter.h"
 #include "ui/tooltip/TooltipHooks.h"
+
+#include "beetrootskin/api/event/TooltipOverlayEvent.h"
 
 #include <optional>
 #include <utility>
@@ -41,17 +45,29 @@ bool enabled() {
 struct Food {
     bool                      rotten = false;
     layout::FoodTooltipLayout layout;
+    api::FoodValues           defaultFood; ///< For TooltipOverlayEvent::Render.
+    api::FoodValues           modifiedFood;
 };
 
-/// Rotten flag and layout of `stack` if the tooltip should show food values.
+/// Rotten flag and layout of `stack` if the tooltip should show food values. Default and
+/// modified values come from api::FoodValuesEvent (AppleSkin FoodHelper.query); differing values
+/// get AppleSkin's outlines. api::TooltipOverlayEvent::Pre may veto the whole overlay.
 std::optional<Food> query(ItemStackBase const& stack) {
     if (!enabled()) return std::nullopt;
-    auto values = game::getFoodValues(stack);
-    if (!values) return std::nullopt;
-    // Bedrock has no player-dependent food values: default == modified.
-    auto l = layout::layoutFoodTooltip(values->hunger, values->saturation, values->hunger, values->saturation);
-    if (!l.visible()) return std::nullopt;
-    return Food{values->rotten, std::move(l)};
+    auto q = game::queryFoodValues(stack);
+    if (!q) return std::nullopt;
+    auto const& def = q->defaultValues;
+    auto const& mod = q->modifiedValues;
+    Food        food{
+        mod.rotten,
+        layout::layoutFoodTooltip(def.hunger, def.saturation, mod.hunger, mod.saturation),
+        core::toApiFoodValues(def),
+        core::toApiFoodValues(mod)
+    };
+    if (!food.layout.visible()) return std::nullopt;
+    api::TooltipOverlayEvent::Pre pre{stack, food.defaultFood, food.modifiedFood};
+    if (!api_impl::postCancellable(pre)) return std::nullopt;
+    return food;
 }
 
 class FoodTooltipExtension final : public ui::ITooltipExtension {
@@ -73,10 +89,13 @@ public:
     void render(ui::TooltipContext& ctx) override {
         auto const* food = get(ctx.stack);
         if (!food) return;
+        auto& p = ctx.painter;
+        api::TooltipOverlayEvent::Render
+            ev{ctx.stack, ctx.area.x, ctx.area.y, p.raw(), food->defaultFood, food->modifiedFood};
+        if (!api_impl::postCancellable(ev)) return; // space stays reserved (AppleSkin)
         auto const&     l      = food->layout;
-        auto&           p      = ctx.painter;
-        float const     x0     = ctx.area.x;
-        float const     y0     = ctx.area.y;
+        float const     x0     = ev.x();
+        float const     y0     = ev.y();
         bool const      rotten = food->rotten;
         auto const      fg     = ui::Painter::Layer::Foreground;
         constexpr float hs     = layout::HUNGER_ICON_SIZE;
