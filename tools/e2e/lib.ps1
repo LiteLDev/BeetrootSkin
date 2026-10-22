@@ -666,6 +666,9 @@ function Save-Screenshot([string]$name, [string]$unit = 'scratch', [switch]$From
     return $path
 }
 
+# The game's client area as a bitmap (the caller disposes it); PrintWindow, see Get-ClientBitmap.
+function Get-GameCapture { Get-ClientBitmap }
+
 # Hash of the pixels of a region of the client area (fractions; default: all of it), to detect
 # when the picture stops changing.
 function Get-ClientHash([double]$X0 = 0, [double]$Y0 = 0, [double]$X1 = 1, [double]$Y1 = 1) {
@@ -702,6 +705,19 @@ function Test-LightGray([double[][]]$Points) {
         if ($min -lt 180 -or $max -gt 228 -or ($max - $min) -gt 12) { return $false }
     }
     return $true
+}
+
+# Colour of the game's client-area pixel at fractions ($x, $y) of the client area, e.g. to tell
+# whether a dialog button is showing.
+function Get-GamePixel([double]$x, [double]$y) {
+    $bmp = Get-GameCapture
+    try { return $bmp.GetPixel([int]($x * ($bmp.Width - 1)), [int]($y * ($bmp.Height - 1))) } finally { $bmp.Dispose() }
+}
+
+# Vanilla's green action button (e.g. "Add and play", "Proceed"): strongly green, dark red/blue.
+function Test-GreenButton([double]$x, [double]$y) {
+    $p = Get-GamePixel $x $y
+    return $p.G -gt 100 -and $p.G -gt $p.R + 40 -and $p.G -gt $p.B + 40
 }
 
 $script:LogOffset = 0
@@ -912,4 +928,254 @@ function Reset-Player {
     Invoke-Chat '/effect @s saturation 1 10 true'
     Start-Sleep -Seconds 2
     Clear-Effects
+}
+
+# ---------------------------------------------------------------------------------------
+# Remote server: the official Bedrock Dedicated Server (BDS), fetched by get-bds.ps1
+# ---------------------------------------------------------------------------------------
+# BDS lives outside the repository. 1.26.51.1 is the server build of the client's 1.26.51.01.
+$script:BdsRoot      = Join-Path $env:LOCALAPPDATA 'BeetrootSkin-bds'
+$script:BdsVersion   = '1.26.51.1'
+$script:BdsPort      = 19132
+# BDS 1.26.51 accepts only NetherNet ("transport=raknet" logs "TRANSPORT TYPE ERROR ... NetherNet
+# is the only supported transport type"), which needs Minecraft's online signaling service on both
+# sides even for 127.0.0.1, so the client can fail with "Multiplayer Connection Failed".
+$script:BdsTransport = 'nethernet'
+$script:BdsLevelName = 'BeetrootSkin-Remote'
+$script:BdsServerName = 'BeetrootSkin e2e'   # entry Join-Bds adds to the client's server list
+$script:Bds          = $null   # BsE2E.BdsProcess while a server runs
+$script:BdsPlayer    = $null   # the client's player name on the server (from "Player Spawned")
+# run.ps1 dot-sources this instead of calling Enter-TestWorld when a prelaunch script sets it,
+# e.g. $script:EnterWorld = { Join-Bds }.
+$script:EnterWorld   = $null
+
+if (-not ('BsE2E.BdsProcess' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+namespace BsE2E {
+// bedrock_server.exe with its console on pipes: stdout is copied to a log file and kept in
+// memory (read with Lines()), commands go to stdin. The pump runs on .NET threads, so it keeps
+// working while the PowerShell script sleeps.
+public sealed class BdsProcess {
+    readonly Process p;
+    readonly StreamWriter log;
+    readonly List<string> lines = new List<string>();
+    BdsProcess(Process p, StreamWriter log) { this.p = p; this.log = log; }
+    public static BdsProcess Start(string exe, string logPath) {
+        var psi = new ProcessStartInfo(exe) {
+            WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
+        };
+        var log = new StreamWriter(logPath, false) { AutoFlush = true };
+        var p = new Process { StartInfo = psi };
+        var b = new BdsProcess(p, log);
+        p.OutputDataReceived += (s, e) => b.Add(e.Data);
+        p.ErrorDataReceived += (s, e) => b.Add(e.Data);
+        p.Start();
+        p.BeginOutputReadLine();
+        p.BeginErrorReadLine();
+        return b;
+    }
+    void Add(string line) {
+        if (line == null) return;
+        lock (lines) { lines.Add(line); try { log.WriteLine(line); } catch (ObjectDisposedException) { } }
+    }
+    public string[] Lines() { lock (lines) return lines.ToArray(); }
+    public int Count { get { lock (lines) return lines.Count; } }
+    public int Id { get { return p.Id; } }
+    public bool HasExited { get { return p.HasExited; } }
+    public void Send(string command) {
+        lock (lines) { try { log.WriteLine("> " + command); } catch (ObjectDisposedException) { } }
+        p.StandardInput.WriteLine(command);
+        p.StandardInput.Flush();
+    }
+    public void Stop(int timeoutMs) {
+        try { if (!p.HasExited) Send("stop"); } catch { }
+        if (!p.WaitForExit(timeoutMs)) { try { p.Kill(true); } catch { } p.WaitForExit(5000); }
+        lock (lines) log.Dispose();
+    }
+}
+}
+'@
+}
+
+function Get-BdsDir([string]$Version = $script:BdsVersion) { Join-Path $script:BdsRoot $Version }
+
+# Rewrite key=value lines of server.properties (keys that are missing are appended).
+function Set-BdsProperties([hashtable]$Properties, [string]$Version = $script:BdsVersion) {
+    $file  = Join-Path (Get-BdsDir $Version) 'server.properties'
+    $lines = [System.Collections.Generic.List[string]]::new([string[]](Get-Content $file))
+    foreach ($key in $Properties.Keys) {
+        $re = '^#?\s*' + [regex]::Escape($key) + '='
+        $i  = -1
+        for ($k = 0; $k -lt $lines.Count; $k++) { if ($lines[$k] -match $re) { $i = $k; break } }
+        if ($i -ge 0) { $lines[$i] = "$key=$($Properties[$key])" } else { $lines.Add("$key=$($Properties[$key])") }
+    }
+    Set-Content $file $lines -Encoding utf8
+}
+
+# Start BDS with a fresh copy of the BeetrootSkin-Test fixture world (flat, always day) as
+# $BdsLevelName: survival, normal, cheats, every joining player operator, listening on
+# 127.0.0.1 only (loopback needs no firewall rule). The console log goes to out\<unit>\bds.log.
+function Start-Bds([string]$Unit = 'bds', [string]$Version = $script:BdsVersion, [int]$TimeoutSeconds = 120) {
+    Stop-Bds
+    $dir = Get-BdsDir $Version
+    $exe = Join-Path $dir 'bedrock_server.exe'
+    if (-not (Test-Path $exe)) { throw "BDS $Version not found in $dir; run tools/e2e/get-bds.ps1 -Version $Version" }
+    Set-BdsProperties @{
+        'server-name' = $script:BdsServerName; 'gamemode' = 'survival'; 'difficulty' = 'normal'; 'allow-cheats' = 'true'
+        'online-mode' = 'true'; 'allow-list' = 'false'; 'level-name' = $script:BdsLevelName
+        'server-port' = $script:BdsPort; 'server-ip' = '127.0.0.1'; 'enable-lan-visibility' = 'false'
+        'transport' = $script:BdsTransport
+        'default-player-permission-level' = 'operator'; 'player-idle-timeout' = '0'
+    } $Version
+    $world = Join-Path $dir "worlds\$script:BdsLevelName"
+    if (Test-Path $world) { Remove-Item -Recurse -Force $world }
+    $zip = Join-Path $script:RepoRoot "tools\e2e\fixtures\$script:WorldName.zip"
+    if (Test-Path $zip) {
+        Expand-Archive -Path $zip -DestinationPath $world -Force
+        Set-Content (Join-Path $world 'levelname.txt') $script:BdsLevelName -NoNewline
+    }
+    $logDir = Join-Path $script:OutDir $Unit
+    New-Item -ItemType Directory -Force $logDir | Out-Null
+    $script:Bds = [BsE2E.BdsProcess]::Start($exe, (Join-Path $logDir 'bds.log'))
+    Write-Step "BDS $Version starting (pid $($script:Bds.Id), 127.0.0.1:$script:BdsPort)"
+    Wait-BdsLine 'Server started\.' 0 $TimeoutSeconds | Out-Null
+    Write-Step "BDS started"
+}
+
+# Stop the server started by Start-Bds ("stop" on the console, killed after 20 s), and any other
+# bedrock_server.exe running from $BdsRoot (leftover of an interrupted run).
+function Stop-Bds {
+    if ($script:Bds) {
+        $script:Bds.Stop(20000)
+        $script:Bds = $null
+        Write-Step "BDS stopped"
+    }
+    # Match on the folder name, not the full path: a packaged (MSIX) shell sees %LOCALAPPDATA%
+    # redirected to its package's LocalCache\Local, so the process path differs from $BdsRoot.
+    $leaf = '\' + (Split-Path $script:BdsRoot -Leaf) + '\'
+    Get-Process -Name 'bedrock_server' -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -and $_.Path.IndexOf($leaf, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    } | ForEach-Object { Write-Step "killing leftover BDS pid $($_.Id)"; $_.Kill($true); $_.WaitForExit(5000) | Out-Null }
+}
+
+# Join-Bds adds a server-list entry every run ("Add and play"); remove ours from the client's
+# minecraftpe\external_servers.txt (lines "<n>:<name>:<address>:<port>:<time>") while the game
+# is closed, so the list does not grow. Other entries are kept and renumbered.
+function Remove-BdsServerEntries {
+    if (Get-GameProcess) { Write-Step "game running: server list left as is"; return }
+    $data = Get-GameDataDir
+    foreach ($f in @(Get-ChildItem (Join-Path $data 'Users') -Recurse -Filter external_servers.txt -ErrorAction SilentlyContinue)) {
+        $lines = @(Get-Content $f.FullName | Where-Object { $_ -ne '' })
+        $keep  = @($lines | Where-Object { ($_ -split ':', 3)[1] -ne $script:BdsServerName })
+        if ($keep.Count -eq $lines.Count) { continue }
+        $n = 0
+        $renumbered = @($keep | ForEach-Object { $n++; "${n}:" +($_ -split ':', 2)[1] })
+        Set-Content $f.FullName $renumbered -Encoding utf8
+        Write-Step "removed $($lines.Count - $keep.Count) '$script:BdsServerName' entries from $($f.FullName)"
+    }
+}
+
+# BDS console lines (all, or after the first $After).
+function Get-BdsLog([int]$After = 0) {
+    if (-not $script:Bds) { return @() }
+    @($script:Bds.Lines()) | Select-Object -Skip $After
+}
+
+function Wait-BdsLine([string]$pattern, [int]$After = 0, [int]$TimeoutSeconds = 30) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $hit = Get-BdsLog $After | Select-String -Pattern $pattern | Select-Object -Last 1
+        if ($hit) { return $hit.Line }
+        if (-not $script:Bds -or $script:Bds.HasExited) { throw "BDS is not running (waiting for '$pattern')" }
+        Start-Sleep -Milliseconds 500
+    }
+    throw "Timed out waiting for BDS line '$pattern'"
+}
+
+# Run a command on the BDS console (no leading slash), e.g. Invoke-BdsCommand 'difficulty peaceful'.
+# {player} is replaced by the joined player's quoted name. Returns the console lines it printed.
+function Invoke-BdsCommand([string]$Command, [int]$WaitMs = 700) {
+    if (-not $script:Bds -or $script:Bds.HasExited) { throw "BDS is not running" }
+    if ($Command.Contains('{player}')) {
+        if (-not $script:BdsPlayer) { throw "No player has joined the server yet" }
+        $Command = $Command.Replace('{player}', "`"$script:BdsPlayer`"")
+    }
+    $at = $script:Bds.Count
+    $script:Bds.Send($Command)
+    Start-Sleep -Milliseconds $WaitMs
+    $out = @(Get-BdsLog $at)
+    Write-Step "bds> $Command$(if ($out) { ' -> ' + ($out -join ' | ') })"
+    return $out
+}
+
+# From the title screen: Play -> Servers -> Add Server (127.0.0.1:$BdsPort) -> "Add and play",
+# then wait until BDS reports the player and BeetrootSkin logs a food state from the client
+# attributes. BDS 1.26.51 only speaks NetherNet, whose signaling can fail on the client
+# ("Multiplayer Connection Failed ... NetherNet"); "Back to menu" there returns to the Servers tab
+# with the new entry selected, and its PLAY button retries (up to $Attempts connects).
+function Join-Bds([int]$Attempts = 3) {
+    if (-not $script:Bds) { throw "Start-Bds first" }
+    $before = @(Get-LeviLog).Count
+    Focus-Game
+    Click 0.498 0.474 -Relative      # Play
+    Start-Sleep -Seconds 4
+    Click 0.832 0.129 -Relative      # Servers tab (the right pane then shows a featured server: never click its Play)
+    Start-Sleep -Seconds 4
+    Click 0.176 0.253 -Relative      # "+ Add server"
+    Start-Sleep -Seconds 3
+    Click 0.5 0.199 -Relative        # Server name
+    Type-Text $script:BdsServerName
+    Click 0.5 0.365 -Relative        # Server address
+    Type-Text '127.0.0.1'
+    if ($script:BdsPort -ne 19132) { # the port field is prefilled with 19132
+        Click 0.5 0.532 -Relative
+        for ($i = 0; $i -lt 6; $i++) { Press-Key BACK 30 }
+        Type-Text "$script:BdsPort"
+    }
+    Save-Screenshot 'add-server' $script:Unit | Out-Null
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        $bdsAt = $script:Bds.Count
+        # Green buttons to press until the server sees the player; these screens drop a click
+        # unless the pointer rested on the button first. Colours are sampled beside the labels:
+        # - "Add and play" / "Proceed" (third-party caution): x 0.51..0.86, y 0.64..0.69;
+        # - PLAY of the selected saved server (after "Back to menu"): x 0.66..0.95, y 0.21..0.27.
+        $deadline = (Get-Date).AddSeconds(60)
+        $n = 0
+        while ((Get-Date) -lt $deadline -and -not (Get-BdsLog $bdsAt | Select-String 'Player connected: ')) {
+            $at = if ((Test-GreenButton 0.56 0.67) -and (Test-GreenButton 0.80 0.67)) { 0.57, 0.67 }
+                  elseif ($attempt -gt 1 -and (Test-GreenButton 0.68 0.24) -and (Test-GreenButton 0.90 0.24)) { 0.69, 0.24 }
+                  else { $null }
+            if ($at) {
+                $n++
+                Move-Mouse ($at[0] - 0.01) ($at[1] - 0.005) -Relative; Start-Sleep -Milliseconds 600
+                Click $at[0] $at[1] -Relative
+                Write-Step "pressed the green button at $($at -join ',') ($n)"
+                Start-Sleep -Seconds 2
+                Save-Screenshot "join-$attempt-$n" $script:Unit | Out-Null
+            }
+            Start-Sleep -Milliseconds 700
+        }
+        try {
+            $line = Wait-BdsLine 'Player Spawned: ' $bdsAt 90
+            if ($line -match 'Player Spawned: (.+?) xuid') { $script:BdsPlayer = $Matches[1].Trim() }
+            Wait-NewLogLine "$($script:ModName): joined level" $before 30 | Out-Null
+            Wait-NewLogLine 'Food state: .*source=client' $before 30 | Out-Null
+            Start-Sleep -Seconds 2
+            Focus-Game
+            Write-Step "joined BDS as '$script:BdsPlayer' (attempt $attempt)"
+            return
+        } catch {
+            Save-Screenshot "join-failed-$attempt" $script:Unit | Out-Null
+            # A player that reached the server (in the world or half-joined) is a real failure.
+            if ($attempt -eq $Attempts -or (Get-BdsLog $bdsAt | Select-String 'Player connected: ')) { throw }
+            Write-Step "server join failed (attempt $attempt): $_; retrying"
+            Click 0.24 0.713 -Relative   # "Back to menu" on "Multiplayer Connection Failed"
+            Start-Sleep -Seconds 10
+        }
+    }
 }

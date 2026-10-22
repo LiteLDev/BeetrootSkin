@@ -290,11 +290,13 @@ public:
                 onClientTick();
             } catch (...) {}
         });
-        mJoin     = bus.emplaceListener<ll::event::ClientJoinLevelEvent>([](ll::event::ClientJoinLevelEvent&) {
-            gSession = {};
+        // No session reset on join: leaving resets it, and on a remote server the client level
+        // ticks and the first attribute/game-rule packets arrive before ClientJoinLevelEvent
+        // (verified against a dedicated server), so a reset here would drop what was logged.
+        mJoin = bus.emplaceListener<ll::event::ClientJoinLevelEvent>([](ll::event::ClientJoinLevelEvent&) {
             pollForceMarker();
         });
-        mExit     = bus.emplaceListener<ll::event::ClientExitLevelEvent>([](ll::event::ClientExitLevelEvent&) {
+        mExit = bus.emplaceListener<ll::event::ClientExitLevelEvent>([](ll::event::ClientExitLevelEvent&) {
             if (gSession.source != Source::None) {
                 log().info(
                     "Sync: left level ({} food attribute updates received); food state source {} -> none",
