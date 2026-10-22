@@ -64,7 +64,10 @@ meantime wins; the older aside copy is kept as `mods-disabled\<name>.stale-<time
 hand). Other projects' aside folders (e.g. `mods.abp-e2e-aside`) are never touched.
 
 **Look at the screenshots** in `tools\e2e\out\<scenario>\` (e.g. with the Read tool). They are the
-evidence that a feature works.
+evidence that a feature works. Runs on slots above 1 write to `tools\e2e\out\<scenario>-slot<N>\`, so
+parallel runs of one scenario keep their own screenshots and logs. Scenario `.restore.ps1` scripts run in
+a child process that inherits the slot through `BEETROOT_E2E_SLOT`, so they undo changes on the
+instance the scenario actually used.
 
 ## Writing a scenario
 

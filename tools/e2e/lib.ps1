@@ -49,8 +49,19 @@ function Set-E2EInstance([int]$Slot) {
     $script:LockFile        = if ($Slot -le 1) { Join-Path $script:LauncherData 'bei-e2e.lock' } else { Join-Path $script:LauncherData "hi$Slot-e2e.lock" }
     # LeviHeadlessInput control pipe of this instance's game.
     $script:HeadlessPipe    = "LeviHeadlessInput-$script:VersionName"
+    # Child processes run.ps1 starts (scenario .restore.ps1 scripts) load this file afresh: tell
+    # them which slot they belong to, or they would act on slot 1's instance.
+    $env:BEETROOT_E2E_SLOT  = "$Slot"
 }
-Set-E2EInstance 1
+# A fresh process starts on the slot its parent run.ps1 holds (BEETROOT_E2E_SLOT), else slot 1.
+Set-E2EInstance $(if ($env:BEETROOT_E2E_SLOT -match '^\d+$') { [int]$env:BEETROOT_E2E_SLOT } else { 1 })
+
+# Output folder of a scenario/unit: tools\e2e\out\<unit> on slot 1 and <unit>-slot<N> on other
+# slots, so parallel runs of the same scenario do not overwrite each other's screenshots/logs.
+function Get-UnitOutDir([string]$unit) {
+    $name = if ($script:InstanceSlot -gt 1) { "$unit-slot$($script:InstanceSlot)" } else { $unit }
+    return Join-Path $script:OutDir $name
+}
 
 if (-not ('BsE2E.Native' -as [type])) {
     Add-Type -AssemblyName System.Drawing
@@ -713,7 +724,7 @@ function Get-ClientBitmap([switch]$FromScreen) {
 }
 
 function Save-Screenshot([string]$name, [string]$unit = 'scratch', [switch]$FromScreen) {
-    $dir = Join-Path $script:OutDir $unit
+    $dir = Get-UnitOutDir $unit
     New-Item -ItemType Directory -Force $dir | Out-Null
     $bmp = Get-ClientBitmap -FromScreen:$FromScreen
     # Downscale for review (keeps files small; 1280 wide is plenty to read the UI).
@@ -1084,7 +1095,9 @@ function Set-BdsProperties([hashtable]$Properties, [string]$Version = $script:Bd
 # $BdsLevelName: survival, normal, cheats, every joining player operator, listening on
 # 127.0.0.1 only (loopback needs no firewall rule). The console log goes to out\<unit>\bds.log.
 function Start-Bds([string]$Unit = 'bds', [string]$Version = $script:BdsVersion, [int]$TimeoutSeconds = 120) {
-    Stop-Bds
+    # One dedicated server per machine (fixed port, shared folder): runs on other slots queue here.
+    Enter-BdsLock
+    Stop-Bds -Leftovers
     $dir = Get-BdsDir $Version
     $exe = Join-Path $dir 'bedrock_server.exe'
     if (-not (Test-Path $exe)) { throw "BDS $Version not found in $dir; run tools/e2e/get-bds.ps1 -Version $Version" }
@@ -1103,7 +1116,7 @@ function Start-Bds([string]$Unit = 'bds', [string]$Version = $script:BdsVersion,
         Set-Content (Join-Path $world 'levelname.txt') $script:BdsLevelName -NoNewline
         Set-WorldByteRule $world 'domobspawning' 0   # like Restore-TestWorld: no zombies in the shade
     }
-    $logDir = Join-Path $script:OutDir $Unit
+    $logDir = Get-UnitOutDir $Unit
     New-Item -ItemType Directory -Force $logDir | Out-Null
     $script:Bds = [BsE2E.BdsProcess]::Start($exe, (Join-Path $logDir 'bds.log'))
     Write-Step "BDS $Version starting (pid $($script:Bds.Id), 127.0.0.1:$script:BdsPort)"
@@ -1111,20 +1124,58 @@ function Start-Bds([string]$Unit = 'bds', [string]$Version = $script:BdsVersion,
     Write-Step "BDS started"
 }
 
-# Stop the server started by Start-Bds ("stop" on the console, killed after 20 s), and any other
-# bedrock_server.exe running from $BdsRoot (leftover of an interrupted run).
-function Stop-Bds {
+# Machine-wide lock for the dedicated server (it uses a fixed port and one install folder), so
+# remote runs on different slots never share or kill each other's server. Held from Start-Bds
+# until Stop-Bds; the OS releases it if the run is killed.
+$script:BdsLockFile = Join-Path $script:LauncherData 'beetrootskin-bds.lock'
+$script:BdsLock     = $null
+
+function Enter-BdsLock([int]$TimeoutMinutes = 120, [switch]$NoWait) {
+    if ($script:BdsLock) { return $true }
+    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+    $logged   = $false
+    while ($true) {
+        try {
+            $script:BdsLock = [System.IO.File]::Open($script:BdsLockFile, 'OpenOrCreate', 'ReadWrite', 'None')
+            return $true
+        } catch [System.IO.IOException] {
+            if ($NoWait) { return $false }
+            if ((Get-Date) -gt $deadline) { throw "BDS lock $script:BdsLockFile still held after $TimeoutMinutes min" }
+            if (-not $logged) { Write-Step "waiting for the BDS lock (another run uses the dedicated server)"; $logged = $true }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
+function Exit-BdsLock {
+    if ($script:BdsLock) { $script:BdsLock.Dispose(); $script:BdsLock = $null }
+}
+
+# Stop the server started by Start-Bds in this process ("stop" on the console, killed after 20 s)
+# and release the BDS lock. -Leftovers also kills any other bedrock_server.exe running from
+# $BdsRoot (an interrupted run's), but only while holding the BDS lock: a server another slot's
+# run is using is never touched.
+function Stop-Bds([switch]$Leftovers) {
     if ($script:Bds) {
         $script:Bds.Stop(20000)
         $script:Bds = $null
         Write-Step "BDS stopped"
     }
-    # Match on the folder name, not the full path: a packaged (MSIX) shell sees %LOCALAPPDATA%
-    # redirected to its package's LocalCache\Local, so the process path differs from $BdsRoot.
-    $leaf = '\' + (Split-Path $script:BdsRoot -Leaf) + '\'
-    Get-Process -Name 'bedrock_server' -ErrorAction SilentlyContinue | Where-Object {
-        $_.Path -and $_.Path.IndexOf($leaf, [StringComparison]::OrdinalIgnoreCase) -ge 0
-    } | ForEach-Object { Write-Step "killing leftover BDS pid $($_.Id)"; $_.Kill($true); $_.WaitForExit(5000) | Out-Null }
+    if ($Leftovers) {
+        $held = [bool]$script:BdsLock
+        if (-not $held -and -not (Enter-BdsLock -NoWait)) {
+            Write-Step "BDS lock held by another run: leaving its server alone"
+            return
+        }
+        # Match on the folder name, not the full path: a packaged (MSIX) shell sees %LOCALAPPDATA%
+        # redirected to its package's LocalCache\Local, so the process path differs from $BdsRoot.
+        $leaf = '\' + (Split-Path $script:BdsRoot -Leaf) + '\'
+        Get-Process -Name 'bedrock_server' -ErrorAction SilentlyContinue | Where-Object {
+            $_.Path -and $_.Path.IndexOf($leaf, [StringComparison]::OrdinalIgnoreCase) -ge 0
+        } | ForEach-Object { Write-Step "killing leftover BDS pid $($_.Id)"; $_.Kill($true); $_.WaitForExit(5000) | Out-Null }
+        if ($held) { return }   # Start-Bds keeps the lock for the server it is about to start
+    }
+    Exit-BdsLock
 }
 
 # Join-Bds adds a server-list entry every run ("Add and play"); remove ours from the client's

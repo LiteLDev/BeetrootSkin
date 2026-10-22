@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- End-to-end harness on game slots above 1: screenshots and logs go to `tools/e2e/out/<scenario>-slot<N>/` so parallel runs of one scenario no longer overwrite each other, and scenario `.restore.ps1` scripts now act on the slot the scenario used instead of always on slot 1.
 - README: `showFoodValuesInTooltipAlways` works without `showFoodValuesInTooltip` (as in AppleSkin and the code); the table said it needed it.
 - Sync diagnostics no longer forget the attribute and game-rule updates a remote server sends before the client's join event (the session state is now reset only on leaving).
 - The debug drawing (`src/debug/DebugDraw.cpp`, used by the `smoke` scenario) is now in the repository: `.gitignore`'s Visual Studio `[Dd]ebug/` rule had kept it out, so `smoke` failed on a clean checkout.

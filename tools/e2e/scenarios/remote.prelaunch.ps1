@@ -5,7 +5,7 @@
 $cfg = Join-Path $script:ModsDir "$script:ModName\config\config.json"
 if (Test-Path $cfg) {
     $json = Get-Content $cfg -Raw | ConvertFrom-Json
-    $saved = Join-Path $script:OutDir 'remote\showFoodDebugInfo.orig'
+    $saved = Join-Path (Get-UnitOutDir 'remote') 'showFoodDebugInfo.orig'
     New-Item -ItemType Directory -Force (Split-Path $saved) | Out-Null
     # Kept from an interrupted run: that one holds the user's value.
     if (-not (Test-Path $saved)) { Set-Content $saved ([string]($json.showFoodDebugInfo -eq $true)) }
