@@ -148,9 +148,18 @@ pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario remote
   TYPE ERROR"), which uses Minecraft's online signaling service even for 127.0.0.1: the machine
   needs internet access, and the client sometimes fails with "Multiplayer Connection Failed ...
   NetherNet". `Join-Bds` then goes "Back to menu" (which returns to the Servers tab with the new
-  entry selected) and presses its PLAY again (3 connects in all). When the client's signaling
-  is down for longer (seen for an hour on 2026-10-22 while BDS reported "Signed in to signaling
-  service successfully"; binding BDS to 0.0.0.0 did not help), the scenario cannot run. The
+  entry selected) and presses its PLAY again (3 connects in all).
+  **Signaling is shared per PC and account:** every game instance signs in to the signaling service
+  with the same ID at start (even in single-player), and a newer session knocks out the older one.
+  So the client's NetherNet session fails whenever another game starts meanwhile (another slot, or
+  another project such as BEI or AlleviatedBackpacks). The client log then shows `Connecting to
+  websocket at: wss://signaling-...` every few seconds while BDS still reports "Signed in to signaling
+  service successfully". `remote.prelaunch.ps1` therefore sets `$script:ExclusiveSignaling = $true`.
+  LeviHeadlessInput's shim then holds `%APPDATA%\levilauncher.exe\e2e-signaling.lock` exclusively
+  from Start-Game to Stop-Game, blocking new headless games and waiting for running ones. Games
+  outside that lock (BEI's foreground harness, LeviLamina dedicated servers started by other
+  projects' e2e runs, a game you play yourself) still interfere: run `remote` while none of
+  them are online. Neither the firewall nor binding BDS to 0.0.0.0 made a difference. The
   `minecraft://connect/?serverUrl=...` deep link is **not usable**: on this machine it is handled
   by the Microsoft Store install of Minecraft (a different, unmodded version), not by the
   LeviLauncher instance. The added server-list entry is removed again by `Remove-BdsServerEntries`
