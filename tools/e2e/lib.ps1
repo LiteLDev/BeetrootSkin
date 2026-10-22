@@ -814,44 +814,48 @@ function Invoke-BdsCommand([string]$Command, [int]$WaitMs = 700) {
     return $out
 }
 
-# From the title screen: Play -> Servers -> Add Server (127.0.0.1:$BdsPort) -> Play, then wait
-# until BDS reports the player and BeetrootSkin logs a food state from the client attributes.
-# Further attempts cover transient NetherNet signaling failures of the client.
+# From the title screen: Play -> Servers -> Add Server (127.0.0.1:$BdsPort) -> "Add and play",
+# then wait until BDS reports the player and BeetrootSkin logs a food state from the client
+# attributes. BDS 1.26.51 only speaks NetherNet, whose signaling can fail on the client
+# ("Multiplayer Connection Failed ... NetherNet"); "Back to menu" there returns to the Servers tab
+# with the new entry selected, and its PLAY button retries (up to $Attempts connects).
 function Join-Bds([int]$Attempts = 3) {
     if (-not $script:Bds) { throw "Start-Bds first" }
+    $before = @(Get-LeviLog).Count
+    Focus-Game
+    Click 0.498 0.474 -Relative      # Play
+    Start-Sleep -Seconds 4
+    Click 0.832 0.129 -Relative      # Servers tab (the right pane then shows a featured server: never click its Play)
+    Start-Sleep -Seconds 4
+    Click 0.176 0.253 -Relative      # "+ Add server"
+    Start-Sleep -Seconds 3
+    Click 0.5 0.199 -Relative        # Server name
+    Type-Text $script:BdsServerName
+    Click 0.5 0.365 -Relative        # Server address
+    Type-Text '127.0.0.1'
+    if ($script:BdsPort -ne 19132) { # the port field is prefilled with 19132
+        Click 0.5 0.532 -Relative
+        for ($i = 0; $i -lt 6; $i++) { Press-Key BACK 30 }
+        Type-Text "$script:BdsPort"
+    }
+    Save-Screenshot 'add-server' $script:Unit | Out-Null
     for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
-        $before = @(Get-LeviLog).Count
-        $bdsAt  = $script:Bds.Count
-        Focus-Game
-        Click 0.498 0.474 -Relative      # Play
-        Start-Sleep -Seconds 4
-        Click 0.832 0.129 -Relative      # Servers tab (the right pane then shows a featured server: never click its Play)
-        Start-Sleep -Seconds 4
-        Click 0.176 0.253 -Relative      # "+ Add server"
-        Start-Sleep -Seconds 3
-        Click 0.5 0.199 -Relative        # Server name
-        Type-Text $script:BdsServerName
-        Click 0.5 0.365 -Relative        # Server address
-        Type-Text '127.0.0.1'
-        if ($script:BdsPort -ne 19132) { # the port field is prefilled with 19132
-            Click 0.5 0.532 -Relative
-            for ($i = 0; $i -lt 6; $i++) { Press-Key BACK 30 }
-            Type-Text "$script:BdsPort"
-        }
-        Save-Screenshot "add-server-$attempt" $script:Unit | Out-Null
-        # "Add and play", then "Proceed" on the "Caution: Third-party online play" dialog: both
-        # are green buttons at about the same spot. Press whichever shows until the server sees
-        # the player; these screens drop a click unless the pointer rested on the button first.
-        # The colour is sampled left and right of the labels (x 0.65..0.74), where both buttons
-        # (x 0.51..0.86, y 0.64..0.69) are plain green.
+        $bdsAt = $script:Bds.Count
+        # Green buttons to press until the server sees the player; these screens drop a click
+        # unless the pointer rested on the button first. Colours are sampled beside the labels:
+        # - "Add and play" / "Proceed" (third-party caution): x 0.51..0.86, y 0.64..0.69;
+        # - PLAY of the selected saved server (after "Back to menu"): x 0.66..0.95, y 0.21..0.27.
         $deadline = (Get-Date).AddSeconds(60)
         $n = 0
         while ((Get-Date) -lt $deadline -and -not (Get-BdsLog $bdsAt | Select-String 'Player connected: ')) {
-            if ((Test-GreenButton 0.56 0.67) -and (Test-GreenButton 0.80 0.67)) {
+            $at = if ((Test-GreenButton 0.56 0.67) -and (Test-GreenButton 0.80 0.67)) { 0.57, 0.67 }
+                  elseif ($attempt -gt 1 -and (Test-GreenButton 0.68 0.24) -and (Test-GreenButton 0.90 0.24)) { 0.69, 0.24 }
+                  else { $null }
+            if ($at) {
                 $n++
-                Move-Mouse 0.56 0.665 -Relative; Start-Sleep -Milliseconds 600
-                Click 0.57 0.67 -Relative
-                Write-Step "pressed the green button ($n)"
+                Move-Mouse ($at[0] - 0.01) ($at[1] - 0.005) -Relative; Start-Sleep -Milliseconds 600
+                Click $at[0] $at[1] -Relative
+                Write-Step "pressed the green button at $($at -join ',') ($n)"
                 Start-Sleep -Seconds 2
                 Save-Screenshot "join-$attempt-$n" $script:Unit | Out-Null
             }
@@ -864,25 +868,15 @@ function Join-Bds([int]$Attempts = 3) {
             Wait-NewLogLine 'Food state: .*source=client' $before 30 | Out-Null
             Start-Sleep -Seconds 2
             Focus-Game
-            Write-Step "joined BDS as '$script:BdsPlayer'"
+            Write-Step "joined BDS as '$script:BdsPlayer' (attempt $attempt)"
             return
         } catch {
             Save-Screenshot "join-failed-$attempt" $script:Unit | Out-Null
-            # Only a connection that never reached the server is retried: from the add-server
-            # form, the caution dialog or the Servers tab, ESC leads back to the title screen. A
-            # player that is in the world (or half-joined) is a real failure.
+            # A player that reached the server (in the world or half-joined) is a real failure.
             if ($attempt -eq $Attempts -or (Get-BdsLog $bdsAt | Select-String 'Player connected: ')) { throw }
             Write-Step "server join failed (attempt $attempt): $_; retrying"
-            # The client's NetherNet transport sometimes fails to reach Minecraft's signaling
-            # service ("Multiplayer Connection Failed ... NetherNet"); its "Back to menu" leads to
-            # the title screen. Elsewhere (form, caution dialog) ESC twice does.
-            Click 0.24 0.713 -Relative   # "Back to menu" (an empty spot on the other screens)
-            # Wait for the title screen's green Play button. No ESC here: on the title screen it
-            # opens "Do you want to exit Minecraft?".
-            $deadline = (Get-Date).AddSeconds(30)
-            while ((Get-Date) -lt $deadline -and -not (Test-GreenButton 0.40 0.474)) { Start-Sleep -Seconds 1 }
-            if (-not (Test-GreenButton 0.40 0.474)) { throw "not back on the title screen after a failed join: $_" }
-            Start-Sleep -Seconds 2
+            Click 0.24 0.713 -Relative   # "Back to menu" on "Multiplayer Connection Failed"
+            Start-Sleep -Seconds 10
         }
     }
 }
