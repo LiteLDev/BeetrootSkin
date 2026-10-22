@@ -2,7 +2,7 @@
 
 These tests drive the **real game** on this machine (adapted from BEI's harness):
 - the LeviLauncher instance `1.26.51.01` at `%APPDATA%\levilauncher.exe\versions\1.26.51.01`;
-- **headless input** by default: the test-only mod LeviHeadlessInput (sibling project
+- **headless input** by default: the test-only mod [LeviHeadlessInput](https://github.com/LiteLDev/LeviHeadlessInput) (clone and build it in
   `%USERPROFILE%\Desktop\LeviHeadlessInput`, see its README; `$env:LEVI_HEADLESS_INPUT_DIR` can point
   at another `bin\LeviHeadlessInput`) is deployed with the mod, and every click, key and text goes
   through its control pipe into the game's own window procedure. The game stays **in the
@@ -11,15 +11,22 @@ These tests drive the **real game** on this machine (adapted from BEI's harness)
   **real input** (`SendInput`, game in the foreground);
 - **window screenshots** (`PrintWindow`, works while the game is covered).
 
-There is one game instance per machine, so `run.ps1` holds a machine-wide lock for the whole run:
-`%APPDATA%\levilauncher.exe\bei-e2e.lock`, **the same file BEI's harness uses**, so runs of both
-projects (and parallel worktrees) simply queue.
+`run.ps1` holds a game lock for the whole run. By default it uses the LeviLauncher instance
+(slot 1) and its lock `%APPDATA%\levilauncher.exe\bei-e2e.lock`, **the same file BEI's and
+AlleviatedBackpacks' harnesses use**, so their runs (and parallel worktrees) queue. Headless runs
+can also use clone instances (slots 2..: `versions\<base>-hi<N>`, made on first use by
+LeviHeadlessInput's `clone-instance.ps1`, lock `hi<N>-e2e.lock`), so several games play at once:
+`-Slot 2`, or `$env:LEVI_E2E_SLOTS = '1,2,3'` to take the first free slot. Games are matched by
+instance folder, so a run only ever touches its own game. Only enable more slots once every
+harness on the machine does that (BEI's still treats every `Minecraft.Windows` process as its own).
+The `remote` scenario uses BDS port 19132: run it on one slot at a time.
 
 ```powershell
 xmake -y                                                   # build bin\BeetrootSkin first
 pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario smoke
 pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario smoke -KeepOpen   # leave the game open afterwards
 pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario smoke -Foreground # real SendInput (takes over the PC)
+pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario smoke -Slot 2     # a clone game instance
 ```
 
 Build LeviHeadlessInput once (`xmake` in its folder, see its README); `run.ps1` refuses to start
