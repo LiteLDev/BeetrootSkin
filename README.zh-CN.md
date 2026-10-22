@@ -76,12 +76,12 @@ lip install github.com/LiteLDev/BeetrootSkin#client
 
 ## 配置
 
-设置保存在 `mods/BeetrootSkin/config/config.json`。首次启动时会以默认值创建该文件，并在启动时读取，因此请在游戏关闭时编辑。配置项名称与 AppleSkin 相同，其文档同样适用。
+设置保存在 `mods/BeetrootSkin/config/config.json`。首次启动时会以默认值创建该文件。可随时编辑，游戏运行中也可以：保存文件后约一秒内生效，无需重启（日志中会出现 `Config reloaded: ...` 及变更的配置项）。如果文件不是有效的 JSON，将保留当前设置并记录一条警告，文件保持原样等待你修正。配置项名称与 AppleSkin 相同，其文档同样适用。
 
 | 键 | 默认值 | 含义 |
 | --- | --- | --- |
 | `showFoodValuesInTooltip` | `true` | 按住 `Shift` 时在食物提示框中显示饥饿值和饱和度图标。 |
-| `showFoodValuesInTooltipAlways` | `true` | 不按 `Shift` 也显示（需要开启 `showFoodValuesInTooltip`）。 |
+| `showFoodValuesInTooltipAlways` | `true` | 不按 `Shift` 也显示（与 AppleSkin 相同，此项可单独生效）。 |
 | `showSaturationHudOverlay` | `true` | 在饥饿条上以轮廓绘制当前饱和度。 |
 | `showFoodValuesHudOverlay` | `true` | 在饥饿条上闪烁显示手持食物将恢复的饥饿值和饱和度。 |
 | `showFoodValuesHudOverlayWhenOffhand` | `true` | 副手持有的食物也显示预览。 |
@@ -92,7 +92,7 @@ lip install github.com/LiteLDev/BeetrootSkin#client
 | `showFoodDebugInfo` | `false` | 显示包含精确饥饿值、饱和度和消耗度的调试信息。游戏中按 `F6` 切换。 |
 | `version` | `1` | 配置格式版本，由模组管理，请勿修改。 |
 
-缺失的键使用默认值；当前版本不认识的键会在保存时原样保留。
+缺失的键使用默认值；当前版本不认识的键会在保存时原样保留。如果模组自行保存文件（例如按下 `F6` 后）时，文件中有模组无法读取的内容，该内容会先被复制到 `config.json.bak`。
 
 ## API
 

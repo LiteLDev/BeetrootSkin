@@ -1,8 +1,10 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace beetroot::core {
 
@@ -40,7 +42,10 @@ struct Config {
     bool save(std::filesystem::path const& file) const;
 
     /// Same as load/save, on JSON text.
-    bool                      fromJsonText(std::string_view text);
+    bool fromJsonText(std::string_view text);
+    /// Same; on failure `error` is the JSON parser's message (with line and column) or
+    /// "not a JSON object", else empty.
+    bool                      fromJsonText(std::string_view text, std::string& error);
     [[nodiscard]] std::string toJsonText() const;
 
     /// Clamp numeric fields into their valid ranges.
@@ -48,5 +53,15 @@ struct Config {
 
     friend bool operator==(Config const&, Config const&) = default;
 };
+
+/// The options that differ between `before` and `after`, as "key=value" (the value of `after`,
+/// JSON spelling, shortest float form), in file order; "extraFields" when the unknown fields
+/// differ. Used to log what a config reload changed.
+[[nodiscard]] std::vector<std::string> changedFields(Config const& before, Config const& after);
+
+/// Three-way merge for saving over a file that changed since it was read: `theirs` (the file on
+/// disk) with every option `ours` changed relative to `base` (what the file held when last read
+/// or written) taken from `ours`.
+[[nodiscard]] Config mergeConfig(Config const& base, Config const& ours, Config const& theirs);
 
 } // namespace beetroot::core

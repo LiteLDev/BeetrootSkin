@@ -76,12 +76,12 @@ There is nothing to set up. Start a world in survival or adventure mode:
 
 ## Configuration
 
-The settings are stored in `mods/BeetrootSkin/config/config.json`. The file is created with the defaults on first launch and read at startup, so edit it while the game is closed. The option names are AppleSkin's, so its documentation applies.
+The settings are stored in `mods/BeetrootSkin/config/config.json`. The file is created with the defaults on first launch. Edit it at any time, even while the game is running: changes are applied within about a second of saving the file, no restart needed (the log shows `Config reloaded: ...` with the changed options). If the file is not valid JSON, the current settings are kept, a warning is logged and the file is left as is for you to fix. The option names are AppleSkin's, so its documentation applies.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `showFoodValuesInTooltip` | `true` | Show the hunger and saturation icons in food tooltips while `Shift` is held. |
-| `showFoodValuesInTooltipAlways` | `true` | Show them even without `Shift` (needs `showFoodValuesInTooltip`). |
+| `showFoodValuesInTooltipAlways` | `true` | Show them even without `Shift` (like AppleSkin, this works on its own). |
 | `showSaturationHudOverlay` | `true` | Draw the current saturation as an outline over the hunger bar. |
 | `showFoodValuesHudOverlay` | `true` | Flash the hunger and saturation the held food would restore on the hunger bar. |
 | `showFoodValuesHudOverlayWhenOffhand` | `true` | Also preview food held in the offhand. |
@@ -92,7 +92,7 @@ The settings are stored in `mods/BeetrootSkin/config/config.json`. The file is c
 | `showFoodDebugInfo` | `false` | Show the debug line with exact hunger, saturation and exhaustion. Toggled in game with `F6`. |
 | `version` | `1` | Config format version, managed by the mod. Do not edit. |
 
-Missing keys get their defaults, and keys this version does not know are kept when the file is saved.
+Missing keys get their defaults, and keys this version does not know are kept when the file is saved. When the mod saves the file itself (for example after `F6`) while it holds content the mod could not read, that content is first copied to `config.json.bak`.
 
 ## API
 
