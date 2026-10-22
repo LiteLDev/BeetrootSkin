@@ -1038,6 +1038,7 @@ function Start-Bds([string]$Unit = 'bds', [string]$Version = $script:BdsVersion,
     if (Test-Path $zip) {
         Expand-Archive -Path $zip -DestinationPath $world -Force
         Set-Content (Join-Path $world 'levelname.txt') $script:BdsLevelName -NoNewline
+        Set-WorldByteRule $world 'domobspawning' 0   # like Restore-TestWorld: no zombies in the shade
     }
     $logDir = Join-Path $script:OutDir $Unit
     New-Item -ItemType Directory -Force $logDir | Out-Null
