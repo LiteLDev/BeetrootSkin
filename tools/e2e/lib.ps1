@@ -641,8 +641,7 @@ $script:BdsPort      = 19132
 # BDS 1.26.51 accepts only NetherNet ("transport=raknet" logs "TRANSPORT TYPE ERROR ... NetherNet
 # is the only supported transport type"), which needs Minecraft's online signaling service on both
 # sides even for 127.0.0.1, so the client can fail with "Multiplayer Connection Failed".
-$script:BdsTransport = 'nethernet'
-$script:BdsLevelName = 'BeetrootSkin-Remote'
+$script:BdsTransport = 'nethernet'$script:BdsLevelName = 'BeetrootSkin-Remote'
 $script:BdsServerName = 'BeetrootSkin e2e'   # entry Join-Bds adds to the client's server list
 $script:Bds          = $null   # BsE2E.BdsProcess while a server runs
 $script:BdsPlayer    = $null   # the client's player name on the server (from "Player Spawned")

@@ -109,7 +109,10 @@ pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario remote
   1.26.51 only supports the NetherNet transport (`transport=raknet` is rejected with "TRANSPORT
   TYPE ERROR"), which uses Minecraft's online signaling service even for 127.0.0.1: the machine
   needs internet access, and the client sometimes fails with "Multiplayer Connection Failed ...
-  NetherNet". `Join-Bds` then goes "Back to menu" and tries again (3 attempts). The
+  NetherNet". `Join-Bds` then goes "Back to menu" (which returns to the Servers tab with the new
+  entry selected) and presses its PLAY again (3 connects in all). When the client's signaling
+  is down for longer (seen for an hour on 2026-10-22 while BDS reported "Signed in to signaling
+  service successfully"; binding BDS to 0.0.0.0 did not help), the scenario cannot run. The
   `minecraft://connect/?serverUrl=...` deep link is **not usable**: on this machine it is handled
   by the Microsoft Store install of Minecraft (a different, unmodded version), not by the
   LeviLauncher instance. The added server-list entry is removed again by `Remove-BdsServerEntries`
