@@ -1,17 +1,54 @@
 #include "game/FoodValues.h"
 
+#include "api/Post.h"
+#include "core/food/ApiFoodValues.h"
 #include "core/food/VanillaFoods.h"
+#include "game/Game.h"
+#include "mod/Log.h"
+
+#include "beetrootskin/api/event/FoodValuesEvent.h"
+
+#include "mc/client/player/LocalPlayer.h"
 
 #include "mc/world/item/FoodItemComponentLegacy.h"
 #include "mc/world/item/Item.h"
 #include "mc/world/item/ItemStackBase.h"
 #include "mc/world/item/components/IFoodItemComponent.h"
 
+#include <map>
 #include <memory>
+#include <mutex>
+#include <string>
+#include <utility>
 
 namespace beetroot::game {
 
 namespace {
+
+/// Logs, per item, when FoodValuesEvent listeners change its values (once per change). Locked:
+/// the exported api::queryFoodValues may be called from other mods on any thread.
+void traceModified(ItemStackBase const& stack, api::FoodValues const& def, api::FoodValues const& mod) {
+    static std::mutex                                                         mutex;
+    static std::map<std::string, std::pair<api::FoodValues, api::FoodValues>> last;
+    std::lock_guard                                                           lock{mutex};
+    auto                                                                      name = stack.getTypeName();
+    auto                                                                      it   = last.find(name);
+    if (it == last.end()) {
+        if (def == mod) return; // never modified so far: nothing to report
+        it = last.emplace(name, std::pair{def, def}).first;
+    }
+    if (it->second == std::pair{def, mod}) return;
+    it->second = {def, mod};
+    log().info(
+        "API: FoodValuesEvent {}: default hunger={} saturation={:.2f} -> modified hunger={} saturation={:.2f}{}",
+        name,
+        def.hunger,
+        def.saturation,
+        mod.hunger,
+        mod.saturation,
+        mod.canAlwaysEat ? " canAlwaysEat" : ""
+    );
+}
 
 /// Whether `food` (the component of `item`) is a FoodItemComponentLegacy, which carries the eat
 /// effects. No RTTI and no usable function address (MCAPI pointers lead to LeviLamina's lazy
@@ -27,7 +64,7 @@ bool isLegacyFood(IFoodItemComponent const& food, Item const& item) {
 
 } // namespace
 
-std::optional<core::FoodValues> getFoodValues(ItemStackBase const& stack, Player const* /*player*/) {
+std::optional<core::FoodValues> getDefaultFoodValues(ItemStackBase const& stack) {
     if (stack.isNull()) return std::nullopt;
     Item const* item = stack.mItem.get();
     if (!item) return std::nullopt;
@@ -55,6 +92,27 @@ std::optional<core::FoodValues> getFoodValues(ItemStackBase const& stack, Player
         values.rotten  = core::anyHarmful(values.effects);
     }
     return values;
+}
+
+std::optional<QueriedFoodValues> queryFoodValues(ItemStackBase const& stack, Player* player) {
+    auto values = getDefaultFoodValues(stack);
+    if (!values) return std::nullopt;
+    if (!player) player = currentPlayer();
+    auto                 defaults = core::toApiFoodValues(*values);
+    api::FoodValuesEvent ev{player, stack, defaults, defaults};
+    api_impl::post(ev);
+    traceModified(stack, ev.defaultFoodValues(), ev.modifiedFoodValues());
+    return QueriedFoodValues{
+        core::withApiFoodValues(*values, ev.defaultFoodValues()),
+        core::withApiFoodValues(*values, ev.modifiedFoodValues())
+    };
+}
+
+std::optional<core::FoodValues> getFoodValues(ItemStackBase const& stack, Player const* player) {
+    // The event hands listeners a mutable Player (like AppleSkin); BeetrootSkin never mutates it.
+    auto q = queryFoodValues(stack, const_cast<Player*>(player));
+    if (!q) return std::nullopt;
+    return std::move(q->modifiedValues);
 }
 
 } // namespace beetroot::game

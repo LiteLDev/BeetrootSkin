@@ -1,0 +1,13 @@
+{
+    "name": "beetroot-api-sample",
+    "entry": "beetroot-api-sample.dll",
+    "version": "0.1.0",
+    "type": "native",
+    "platform": "client",
+    "description": "Test-only companion mod for BeetrootSkin's API (not shipped)",
+    "dependencies": [
+        {
+            "name": "BeetrootSkin"
+        }
+    ]
+}

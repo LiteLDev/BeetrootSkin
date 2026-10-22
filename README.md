@@ -18,6 +18,7 @@ BeetrootSkin brings what [AppleSkin](https://github.com/squeek502/AppleSkin) doe
 - [Install](#install)
 - [Usage](#usage)
 - [Configuration](#configuration)
+- [API](#api)
 - [Building](#building)
 - [Maintainers](#maintainers)
 - [Contributing](#contributing)
@@ -92,6 +93,53 @@ The settings are stored in `mods/BeetrootSkin/config/config.json`. The file is c
 | `version` | `1` | Config format version, managed by the mod. Do not edit. |
 
 Missing keys get their defaults, and keys this version does not know are kept when the file is saved.
+
+## API
+
+Other LeviLamina mods can integrate with BeetrootSkin through a C++ port of [AppleSkin's API](https://github.com/squeek502/AppleSkin/tree/1.21.11-neoforge/java/squeek/appleskin/api). The events are LeviLamina events on `ll::event::EventBus`, posted on the client thread:
+
+| Event | When | Cancel to |
+| --- | --- | --- |
+| `beetroot::api::FoodValuesEvent` | BeetrootSkin determines the food values of an item (tooltips and the held food behind every HUD preview). Change `modifiedFoodValues()` (or `defaultFoodValues()`): every display uses the modified values, and tooltips show default vs modified with AppleSkin's outlines. | (not cancellable) |
+| `beetroot::api::TooltipOverlayEvent::Pre` | Food values are about to be added to a tooltip. | show no food values for this item |
+| `beetroot::api::TooltipOverlayEvent::Render` | They are about to be drawn (`x()`/`y()` movable, `renderContext()` to draw your own). | keep the space, draw nothing |
+| `beetroot::api::HUDOverlayEvent::Exhaustion` | The exhaustion underlay is drawn (`exhaustion()`). | hide the underlay |
+| `beetroot::api::HUDOverlayEvent::Saturation` | The saturation overlay is drawn (`saturationLevel()`). | hide the saturation overlay and the held food's saturation gain |
+| `beetroot::api::HUDOverlayEvent::HungerRestored` | The held food's hunger preview is drawn (`currentFoodLevel()`, `itemStack()`, `foodValues()`). | hide the hunger preview |
+| `beetroot::api::HUDOverlayEvent::HealthRestored` | The held food's health preview is drawn (`modifiedHealth()`, `itemStack()`, `foodValues()`). | hide the health preview |
+
+HUD events carry the overlay position in GUI units (`x()`/`y()`, changeable to move it): the right edge and top of the hunger bar, or the left edge and bottom-row top of the hearts. `beetroot::api::FoodValues` holds `hunger`, `saturation` (saturation gained) and `canAlwaysEat`. Two functions are exported as well: `apiVersion()` and `queryFoodValues(stack, player)` (default and modified values of an item, firing `FoodValuesEvent`).
+
+To use it:
+
+1. Get the SDK: `beetrootskin-sdk-client-windows-x64.zip` from a release, or build BeetrootSkin, which writes it to `bin/BeetrootSkin-sdk/`. It holds `include/beetrootskin/api/*.h` and `lib/BeetrootSkin.lib`.
+2. Add the SDK's `include` to your include path and link `BeetrootSkin.lib` (the headers also need LeviLamina's).
+3. Declare the dependency in your `manifest.json`, so that BeetrootSkin loads (and registers its events) before your mod: `"dependencies": [{ "name": "BeetrootSkin" }]`.
+4. Subscribe in your mod's `enable()`:
+
+```cpp
+#include "beetrootskin/api/Events.h"
+
+#include "ll/api/event/EventBus.h"
+#include "mc/world/item/ItemStackBase.h"
+
+// In your mod's enable():
+auto& bus = ll::event::EventBus::getInstance();
+mListeners.push_back(bus.emplaceListener<beetroot::api::FoodValuesEvent>([](beetroot::api::FoodValuesEvent& ev) {
+    if (ev.itemStack().getTypeName() == "minecraft:bread") ev.modifiedFoodValues().hunger *= 2;
+}));
+mListeners.push_back(bus.emplaceListener<beetroot::api::HUDOverlayEvent::Exhaustion>(
+    [](beetroot::api::HUDOverlayEvent::Exhaustion& ev) { ev.cancel(); }
+));
+mListeners.push_back(bus.emplaceListener<beetroot::api::TooltipOverlayEvent::Pre>(
+    [](beetroot::api::TooltipOverlayEvent::Pre& ev) {
+        if (ev.itemStack().getTypeName() == "minecraft:apple") ev.cancel();
+    }
+));
+// In disable(): bus.removeListener(l) for each of them.
+```
+
+[samples/api_sample](samples/api_sample/ApiSample.cpp) is a complete mod that does exactly this; it is built with `xmake f --api_sample=y` and used by the `api` end-to-end scenario.
 
 ## Building
 

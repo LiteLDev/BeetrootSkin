@@ -5,6 +5,7 @@
 #include "app/Mod.h"
 #include "app/Module.h"
 #include "core/geom/IconRows.h"
+#include "game/Game.h"
 #include "mod/Log.h"
 #include "ui/gfx/Painter.h"
 
@@ -16,6 +17,7 @@
 #include "mc/client/gui/controls/renderers/HudHeartRenderer.h"
 #include "mc/client/gui/controls/renderers/HudHungerRenderer.h"
 #include "mc/client/gui/screens/UIScene.h"
+#include "mc/client/player/LocalPlayer.h"
 #include "mc/client/renderer/screen/MinecraftUIRenderContext.h"
 
 #include <algorithm>
@@ -40,6 +42,31 @@ bool                                        gHungerValid = false;
 bool                                        gHungerShown = true;
 std::vector<core::Rect>                     gHeartIcons;
 std::vector<float>                          gHeartJitter;
+
+/// game::heldFood() at most once per client tick (AppleSkin's HeldFoodCache queries once per GUI
+/// tick), so api::FoodValuesEvent listeners do not run for every HUD pass of every frame. Requeried
+/// when the player object or the held slot changes; the cached stack pointer is only compared,
+/// never dereferenced, before it is known to be the player's current slot.
+std::optional<game::HeldFood> cachedHeldFood() {
+    static int                           tick   = -1;
+    static void const*                   player = nullptr;
+    static std::optional<game::HeldFood> held;
+    auto*                                p = game::currentPlayer();
+    if (!p) {
+        tick   = -1;
+        player = nullptr;
+        held.reset();
+        return std::nullopt;
+    }
+    bool sameSlot =
+        !held || (held->stack && held->stack == (held->offhand ? &p->getOffhandSlot() : &p->getSelectedItem()));
+    if (tick != gTick || player != p || !sameSlot) {
+        tick   = gTick;
+        player = p;
+        held   = game::heldFood();
+    }
+    return held;
+}
 
 bool isHudScene(MinecraftUIRenderContext& ctx) {
     auto name = ctx.mCurrentScene.getScreenName();
@@ -81,7 +108,7 @@ void runLayers(HudSlot slot, MinecraftUIRenderContext& ctx, core::Rect const& co
     hc.heartIcons       = gHeartIcons;
     hc.heartJitterY     = gHeartJitter;
     hc.state            = game::readFoodState();
-    hc.held             = game::heldFood();
+    hc.held             = cachedHeldFood();
     hc.flashAlpha       = hudFlashAlpha();
     hc.clientTick       = gTick;
     for (auto* l : matching) {
@@ -249,7 +276,7 @@ public:
             [](ll::event::ClientLevelTickEvent&) {
                 ++gTick;
                 try {
-                    gFlash.tick(game::heldFood().has_value());
+                    gFlash.tick(cachedHeldFood().has_value());
                 } catch (...) {
                     gFlash.reset();
                 }
