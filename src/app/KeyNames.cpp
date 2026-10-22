@@ -13,7 +13,9 @@
 #include "mc/locale/I18nImpl.h"
 #include "mc/locale/Localization.h"
 
+#include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,6 +23,24 @@
 namespace beetroot::app::key_names {
 
 constexpr std::string_view ACTION_PREFIX = "key.BeetrootSkin."; ///< "key.<mod name>."
+
+/// Logs each id's text once (and again when it changes): proves the controls menu lists our keys and shows
+/// the name it got (per language) without per-frame logging. Any thread. The map is leaked on
+/// purpose (no static destruction order issues).
+namespace {
+void logOnce(std::string const& id, std::string const& text) {
+    static std::mutex mutex;
+    static auto&      logged = *new std::map<std::string, std::string>{}; // id -> last logged text
+    std::lock_guard   lock{mutex};
+    if (auto it = logged.find(id); it != logged.end()) {
+        if (it->second == text) return; // the common case: no allocation
+        it->second = text;              // e.g. the game language changed
+    } else {
+        logged.emplace(id, text);
+    }
+    log().info("Key name requested: {} -> '{}'", id, text);
+}
+} // namespace
 
 LL_TYPE_INSTANCE_HOOK(
     KeyNameI18nHook,
@@ -36,12 +56,15 @@ LL_TYPE_INSTANCE_HOOK(
         constexpr std::string_view NAME_SUFFIX = ".name";
         constexpr std::string_view DESC_SUFFIX = ".description";
         auto                       rest        = std::string_view{id}.substr(ACTION_PREFIX.size());
-        static bool                logged      = false; // once: proves the controls menu lists our keys
-        if (!logged) log().info("Key name requested: {}", id);
-        logged = true;
-        if (rest.ends_with(DESC_SUFFIX)) return tr("beetroot.key." + std::string{rest}, " ");
-        if (rest.ends_with(NAME_SUFFIX)) rest.remove_suffix(NAME_SUFFIX.size());
-        return tr("beetroot.key." + std::string{rest}, rest);
+        std::string                text;
+        if (rest.ends_with(DESC_SUFFIX)) {
+            text = tr("beetroot.key." + std::string{rest}, " ");
+        } else {
+            if (rest.ends_with(NAME_SUFFIX)) rest.remove_suffix(NAME_SUFFIX.size());
+            text = tr("beetroot.key." + std::string{rest}, rest);
+        }
+        logOnce(id, text);
+        return text;
     }
     return origin(id, params, locale);
 }
