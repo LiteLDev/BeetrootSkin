@@ -1,5 +1,6 @@
 # BeetrootSkin end-to-end test helpers: deploy the mod, drive Minecraft Bedrock through LeviLauncher,
-# send real input (SendInput) and capture screenshots.
+# send input (SendInput, or the LeviHeadlessInput mod's control pipe in headless mode, see run.ps1)
+# and capture screenshots.
 #
 # Dot-source this file:  . "$PSScriptRoot/lib.ps1"
 # All coordinates passed to Click/Move are *client-area pixels* of the game window, or
@@ -9,26 +10,47 @@
 $script:RepoRoot     = (Resolve-Path "$PSScriptRoot/../..").Path
 $script:Launcher     = Join-Path $env:USERPROFILE 'Desktop\LeviLauncher.exe'
 $script:LauncherData = Join-Path $env:APPDATA 'levilauncher.exe'
-$script:VersionName  = '1.26.51.01'
-$script:VersionDir   = Join-Path $script:LauncherData "versions\$script:VersionName"
-$script:ModsDir      = Join-Path $script:VersionDir 'mods'
-$script:GameExe      = Join-Path $script:VersionDir 'Minecraft.Windows.exe'
-# Shared with BEI's harness on purpose: both projects drive the same game instance, so their
-# runs queue on the same lock.
-$script:LockFile     = Join-Path $script:LauncherData 'bei-e2e.lock'
+$script:BaseVersion  = '1.26.51.01'
 $script:OutDir       = Join-Path $script:RepoRoot 'tools\e2e\out'
 $script:ModName      = 'BeetrootSkin'
 $script:WorldName    = 'BeetrootSkin-Test'
 # Every other mod folder (BEI, other projects sharing this game instance) is moved to
 # mods-disabled\ for the run and moved back by Restore-OtherMods, so their hooks and UI don't
 # interfere. mods-disabled\ belongs to this harness: whatever is in it gets restored.
-$script:KeepMods         = @('LeviLamina', $script:ModName)
-$script:DisabledModsDir  = Join-Path $script:VersionDir 'mods-disabled'
+# LeviHeadlessInput (headless input, see run.ps1) is deployed fresh by every run and removed after it:
+# never park it in mods-disabled\ (a restored copy would make a normally started game ignore the
+# real mouse and keyboard).
+$script:KeepMods         = @('LeviLamina', $script:ModName, 'LeviHeadlessInput')
 # Test-only companion mods built from this repository (bin\<name>, e.g. beetroot-api-sample from
 # `xmake f --api_sample=y`). Scenarios deploy them with Deploy-ExtraMod in their prelaunch script
 # and remove them with Remove-ExtraMod in their restore script; Disable-OtherMods deletes a
 # leftover of an interrupted run instead of parking it in mods-disabled\.
 $script:TestOnlyMods     = @('beetroot-api-sample')
+# LeviHeadlessInput (https://github.com/LiteLDev/LeviHeadlessInput, cloned and built in
+# %USERPROFILE%\Desktop\LeviHeadlessInput by default): a test-only client mod
+# that lets run.ps1 drive the game through a control pipe instead of the real mouse and keyboard.
+# Its build output (DLL, HeadlessInput.psm1, harness-shim.ps1) is taken from here.
+$script:HeadlessInputDir = if ($env:LEVI_HEADLESS_INPUT_DIR) { $env:LEVI_HEADLESS_INPUT_DIR } else {
+    Join-Path $env:USERPROFILE 'Desktop\LeviHeadlessInput\bin\LeviHeadlessInput' }
+
+# Game instances ("slots"). Slot 1 is the LeviLauncher instance itself; its lock is shared with
+# BEI's and AlleviatedBackpacks' harnesses on purpose (they drive the same instance). Slots 2..N
+# are clones made by LeviHeadlessInput's clone-instance.ps1 (versions\<base>-hi<N>: hard links +
+# their own mods\, logs\ and game data) with a lock each, so headless runs can use several games
+# at once. Foreground (real input) runs always use slot 1. Set-E2EInstance points every
+# instance-specific path at a slot; run.ps1 picks the slot (Enter-E2ELock -Slots).
+function Set-E2EInstance([int]$Slot) {
+    $script:InstanceSlot    = $Slot
+    $script:VersionName     = if ($Slot -le 1) { $script:BaseVersion } else { "$($script:BaseVersion)-hi$Slot" }
+    $script:VersionDir      = Join-Path $script:LauncherData "versions\$script:VersionName"
+    $script:ModsDir         = Join-Path $script:VersionDir 'mods'
+    $script:GameExe         = Join-Path $script:VersionDir 'Minecraft.Windows.exe'
+    $script:DisabledModsDir = Join-Path $script:VersionDir 'mods-disabled'
+    $script:LockFile        = if ($Slot -le 1) { Join-Path $script:LauncherData 'bei-e2e.lock' } else { Join-Path $script:LauncherData "hi$Slot-e2e.lock" }
+    # LeviHeadlessInput control pipe of this instance's game.
+    $script:HeadlessPipe    = "LeviHeadlessInput-$script:VersionName"
+}
+Set-E2EInstance 1
 
 if (-not ('BsE2E.Native' -as [type])) {
     Add-Type -AssemblyName System.Drawing
@@ -110,7 +132,16 @@ public static class Native {
 
     static void Send(INPUT i) { SendInput(1, new[] { i }, Marshal.SizeOf(typeof(INPUT))); }
 
+    // Set by LeviHeadlessInput's harness-shim.ps1 (Register-HeadlessNative): the input methods
+    // below then go to the game through the mod's control pipe instead of SendInput.
+    public static Action<ushort, bool> KeyRedirect;
+    public static Action<int, bool> MouseButtonRedirect;
+    public static Action<int> WheelRedirect;
+    public static Action<char> UnicodeRedirect;
+    public static Action<int, int> MoveRelativeRedirect;
+
     public static void Key(ushort vk, bool up) {
+        if (KeyRedirect != null) { KeyRedirect(vk, up); return; }
         var i = new INPUT { type = INPUT_KEYBOARD };
         i.u.ki.wVk = vk;
         i.u.ki.wScan = (ushort)MapVirtualKey(vk, 0);
@@ -119,20 +150,24 @@ public static class Native {
         Send(i);
     }
     public static void Unicode(char c) {
+        if (UnicodeRedirect != null) { UnicodeRedirect(c); return; }
         var down = new INPUT { type = INPUT_KEYBOARD }; down.u.ki.wScan = c; down.u.ki.dwFlags = KEYEVENTF_UNICODE;
         var up = new INPUT { type = INPUT_KEYBOARD }; up.u.ki.wScan = c; up.u.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
         Send(down); Send(up);
     }
     public static void MouseButton(int button, bool up) {
+        if (MouseButtonRedirect != null) { MouseButtonRedirect(button, up); return; }
         var i = new INPUT { type = INPUT_MOUSE };
         if (button == 0) i.u.mi.dwFlags = up ? MOUSEEVENTF_LEFTUP : MOUSEEVENTF_LEFTDOWN;
         else i.u.mi.dwFlags = up ? MOUSEEVENTF_RIGHTUP : MOUSEEVENTF_RIGHTDOWN;
         Send(i);
     }
     public static void Wheel(int delta) {
+        if (WheelRedirect != null) { WheelRedirect(delta); return; }
         var i = new INPUT { type = INPUT_MOUSE }; i.u.mi.dwFlags = MOUSEEVENTF_WHEEL; i.u.mi.mouseData = (uint)delta; Send(i);
     }
     public static void MoveRelative(int dx, int dy) {
+        if (MoveRelativeRedirect != null) { MoveRelativeRedirect(dx, dy); return; }
         var i = new INPUT { type = INPUT_MOUSE }; i.u.mi.dwFlags = MOUSEEVENTF_MOVE; i.u.mi.dx = dx; i.u.mi.dy = dy; Send(i);
     }
 }
@@ -148,19 +183,23 @@ function Write-Step([string]$msg) { Write-Host "[e2e] $msg" }
 # ---------------------------------------------------------------------------------------
 # Lock (the game instance is shared by every worktree on this machine)
 # ---------------------------------------------------------------------------------------
-function Enter-E2ELock([int]$TimeoutMinutes = 120) {
+# Takes the lock of the first free slot in -Slots (default: the current one, see Set-E2EInstance)
+# and switches every instance path to that slot.
+function Enter-E2ELock([int]$TimeoutMinutes = 120, [int[]]$Slots = @($script:InstanceSlot)) {
     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
     while ($true) {
-        try {
-            $script:LockStream = [System.IO.File]::Open($script:LockFile, 'OpenOrCreate', 'ReadWrite', 'None')
-            $bytes = [Text.Encoding]::UTF8.GetBytes("pid=$PID repo=$script:RepoRoot at=$(Get-Date -Format o)")
-            $script:LockStream.SetLength(0); $script:LockStream.Write($bytes, 0, $bytes.Length); $script:LockStream.Flush()
-            Write-Step "lock acquired"
-            return
-        } catch [System.IO.IOException] {
-            if ((Get-Date) -gt $deadline) { throw "Timed out waiting for e2e lock $script:LockFile" }
-            Start-Sleep -Seconds 15
+        foreach ($s in $Slots) {
+            Set-E2EInstance $s
+            try {
+                $script:LockStream = [System.IO.File]::Open($script:LockFile, 'OpenOrCreate', 'ReadWrite', 'None')
+                $bytes = [Text.Encoding]::UTF8.GetBytes("pid=$PID repo=$script:RepoRoot at=$(Get-Date -Format o)")
+                $script:LockStream.SetLength(0); $script:LockStream.Write($bytes, 0, $bytes.Length); $script:LockStream.Flush()
+                Write-Step "lock acquired (slot $s, instance $script:VersionName)"
+                return
+            } catch [System.IO.IOException] { }
         }
+        if ((Get-Date) -gt $deadline) { throw "Timed out waiting for an e2e lock (slots $($Slots -join ', '))" }
+        Start-Sleep -Seconds 2
     }
 }
 
@@ -200,6 +239,16 @@ function Deploy-Mod([string]$BinDir = (Join-Path $script:RepoRoot "bin\$script:M
     }
     Copy-Item -Recurse -Force (Join-Path $BinDir '*') $dest
     Write-Step "deployed $BinDir -> $dest"
+}
+
+# Remove mods\LeviHeadlessInput (a leftover of a killed or -KeepOpen run, or this run's copy once the
+# game is closed), retrying while the game still holds the DLL open.
+function Remove-HeadlessInputMod {
+    $dest = Join-Path $script:ModsDir 'LeviHeadlessInput'
+    for ($i = 0; $i -lt 10 -and (Test-Path $dest); $i++) {
+        try { Remove-Item -Recurse -Force $dest -ErrorAction Stop } catch { Start-Sleep -Seconds 2 }
+    }
+    if (Test-Path $dest) { Write-Host "[e2e] FAILED to remove $dest; delete it by hand" -ForegroundColor Red }
 }
 
 # Move a directory, retrying for a while: the game (or an antivirus scan) may still hold files
@@ -420,18 +469,32 @@ function Restore-TestWorld {
 # ---------------------------------------------------------------------------------------
 # Game process / window
 # ---------------------------------------------------------------------------------------
-function Get-GameProcess { Get-Process -Name 'Minecraft.Windows' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1 }
+# The games of this slot's instance only (other slots may run games of their own): matched by the
+# exe's folder, since every instance runs a Minecraft.Windows.exe.
+function Get-InstanceProcesses {
+    $dir = $script:VersionDir.TrimEnd('\') + '\'
+    Get-Process -Name 'Minecraft.Windows' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and $_.Path.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) }
+}
+function Get-GameProcess { Get-InstanceProcesses | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1 }
 
 function Start-Game([int]$TimeoutSeconds = 180) {
     if (Get-GameProcess) { throw "Minecraft is already running; close it first" }
     # latest.log is appended across sessions: remember where this session starts.
     $script:LogOffset = @(Get-LeviLog -All).Count
-    # A leftover launcher instance swallows --launch (single-instance hand-off) without starting
-    # the game, so close any running launcher first.
-    Get-Process -Name 'LeviLauncher' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-    Write-Step "launching $script:VersionName via LeviLauncher"
-    Start-Process -FilePath $script:Launcher -ArgumentList "--launch=`"$script:VersionName`""
+    if ($script:Headless) {
+        # Straight from the instance folder (the exe loads PreLoader/LeviLamina itself), with a
+        # window that is shown without being activated; no launcher window either.
+        Write-Step "launching $script:VersionName in the background"
+        & (Join-Path $script:HeadlessInputDir 'Start-HeadlessGame.ps1') -Instance $script:VersionName | Out-Null
+    } else {
+        # A leftover launcher instance swallows --launch (single-instance hand-off) without
+        # starting the game, so close any running launcher first.
+        Get-Process -Name 'LeviLauncher' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+        Write-Step "launching $script:VersionName via LeviLauncher"
+        Start-Process -FilePath $script:Launcher -ArgumentList "--launch=`"$script:VersionName`""
+    }
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         $p = Get-GameProcess
@@ -442,11 +505,11 @@ function Start-Game([int]$TimeoutSeconds = 180) {
 }
 
 function Stop-Game {
-    Get-Process -Name 'Minecraft.Windows' -ErrorAction SilentlyContinue | ForEach-Object {
+    Get-InstanceProcesses | ForEach-Object {
         $_.CloseMainWindow() | Out-Null
         if (-not $_.WaitForExit(10000)) { $_.Kill() }
     }
-    Get-Process -Name 'LeviLauncher' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    if (-not $script:Headless) { Get-Process -Name 'LeviLauncher' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue }
     Write-Step "game stopped"
 }
 

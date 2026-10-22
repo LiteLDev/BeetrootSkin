@@ -8,6 +8,7 @@
     deployed again meanwhile wins; the older one is kept as mods-disabled\<name>.stale-<time>);
   - options.txt keys changed by Set-GameOption (e.g. game_language for controls_zh) get their
     original values back (recorded in options.txt.bs-e2e-orig).
+  - a leftover mods\LeviHeadlessInput (headless input) is deleted.
   Other projects' folders (e.g. mods.abp-e2e-aside) are not touched.
 
   Takes the shared e2e lock first so it never interferes with a running scenario (waits up to
@@ -16,15 +17,17 @@
 .EXAMPLE
   pwsh -NoProfile -File tools/e2e/restore-mods.ps1
 #>
-param([int]$WaitMinutes = 10)
+param([int]$WaitMinutes = 10, [int]$Slot = 1)   # -Slot: which game instance (see run.ps1)
 
 . "$PSScriptRoot/lib.ps1"
 $ErrorActionPreference = 'Stop'
 
+Set-E2EInstance $Slot
 Enter-E2ELock -TimeoutMinutes $WaitMinutes
 try {
     if (Get-GameProcess) { throw "Minecraft is running; close it first (it rewrites options.txt on exit)" }
     Restore-GameOptions
+    Remove-HeadlessInputMod
     if (Restore-OtherMods) { Write-Step "nothing left in $script:DisabledModsDir" }
     else { exit 1 }
 } finally {

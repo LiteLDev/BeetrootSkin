@@ -11,18 +11,47 @@
 
   Screenshots land in tools\e2e\out\<Scenario>\. Review them (they are the evidence).
 
+  By default the run is headless: the LeviHeadlessInput mod (https://github.com/LiteLDev/LeviHeadlessInput, see
+  $script:HeadlessInputDir in lib.ps1) is deployed next to BeetrootSkin and every click, key and
+  screenshot goes through its control pipe, so the game stays in the background and never takes
+  the real mouse, keyboard or foreground. -Foreground uses real input (SendInput) as before.
+
 .EXAMPLE
   pwsh tools/e2e/run.ps1 -Scenario smoke
   pwsh tools/e2e/run.ps1 -Scenario smoke -KeepOpen   # leave the game running for manual poking
+  pwsh tools/e2e/run.ps1 -Scenario smoke -Foreground # real mouse/keyboard (takes over the PC)
+  pwsh tools/e2e/run.ps1 -Scenario smoke -Slot 2     # a specific game instance (see -Slot)
+
+.PARAMETER Slot
+  Game instances the run may use (headless only; foreground runs always use slot 1, the
+  LeviLauncher instance). The first free one is taken. Default: $env:LEVI_E2E_SLOTS ("1,2,3") or
+  1. Slots 2.. are clones (versions\<base>-hi<N>) created on first use, so several runs (of this
+  and other projects) can play at the same time. Only use them once every harness on the machine
+  touches its own instance's game only (older BEI/AlleviatedBackpacks harnesses focus, feed and
+  close every Minecraft.Windows process).
 #>
 param(
     [Parameter(Mandatory)] [string]$Scenario,
     [switch]$NoDeploy,
-    [switch]$KeepOpen
+    [switch]$KeepOpen,
+    [switch]$Foreground,
+    [int[]]$Slot
 )
 
 . "$PSScriptRoot/lib.ps1"
 $ErrorActionPreference = 'Stop'
+
+if (-not $Foreground) {
+    $shim = Join-Path $script:HeadlessInputDir 'harness-shim.ps1'
+    if (-not (Test-Path $shim)) {
+        throw "LeviHeadlessInput is not built ($shim missing). Build it (xmake in its project folder), set `$env:LEVI_HEADLESS_INPUT_DIR, or pass -Foreground to use the real mouse and keyboard."
+    }
+    # Replaces Click/Press-Key/Type-Text/Scroll/Move-Mouse/Focus-Game/Assert-GameForeground/
+    # Set-GameWindowSize/Get-ClientBitmap and routes [BsE2E.Native]::Key/MouseButton/... used by
+    # scenarios through the mod's pipe.
+    . $shim
+    Register-HeadlessNative ([BsE2E.Native])
+}
 
 $scenarioFile = Join-Path $PSScriptRoot "scenarios/$Scenario.ps1"
 if (-not (Test-Path $scenarioFile)) { throw "Unknown scenario: $scenarioFile" }
@@ -30,14 +59,20 @@ if (-not (Test-Path $scenarioFile)) { throw "Unknown scenario: $scenarioFile" }
 # A locked workstation delivers no input: wait for an unlock instead of failing (before taking the
 # lock, so other projects are not blocked meanwhile, and again right before launching).
 Wait-SessionUnlocked | Out-Null
-Enter-E2ELock
+$slots = if ($Foreground) { @(1) } elseif ($Slot) { $Slot } elseif ($env:LEVI_E2E_SLOTS) {
+    @($env:LEVI_E2E_SLOTS -split '[,; ]+' | Where-Object { $_ } | ForEach-Object { [int]$_ }) } else { @(1) }
+Enter-E2ELock -Slots $slots
 $failed = $null
 try {
+    # A clone instance is made on first use (cheap: hard links); it keeps its own mods and data.
+    if ($script:InstanceSlot -gt 1) { & (Join-Path $script:HeadlessInputDir 'clone-instance.ps1') -Slot $script:InstanceSlot -Source $script:BaseVersion }
     if (Get-GameProcess) { Write-Step "closing a running game first"; Stop-Game }
     # Leftovers of a killed run: options.txt backup (Disable-OtherMods puts mods back itself).
     Restore-GameOptions
     Disable-OtherMods
     if (-not $NoDeploy) { Deploy-Mod }
+    Remove-HeadlessInputMod   # leftover of a killed or -KeepOpen run
+    if ($script:Headless) { Install-HeadlessInputMod -ModsDir $script:ModsDir -PipeName $script:HeadlessPipe }
     Restore-TestWorld
     $script:Unit = $Scenario
     # Optional scenarios\<name>.prelaunch.ps1, e.g. to seed mods\BeetrootSkin\config before the mod loads.
@@ -61,6 +96,16 @@ try {
     # Every cleanup step runs even when an earlier one fails.
     if (-not $KeepOpen) {
         try { Stop-Game } catch { Write-Host "[e2e] stopping the game failed: $_" -ForegroundColor Red }
+        try { Remove-HeadlessInputMod } catch { Write-Host "[e2e] removing LeviHeadlessInput failed: $_" -ForegroundColor Red }
+    } elseif ($script:Headless) {
+        # Hand the open game to the human (real input again) and keep a later normal start passive;
+        # the next run removes the mod.
+        try {
+            Set-HeadlessBackground $false | Out-Null
+            $cfg = Join-Path $script:ModsDir 'LeviHeadlessInput\config\config.json'
+            if (Test-Path $cfg) { '{ "background": false }' | Set-Content -Encoding utf8 $cfg }
+            Write-Step "headless input off: the game takes real input again"
+        } catch { Write-Host "[e2e] switching headless input off failed: $_" -ForegroundColor Red }
     }
     # The dedicated server (if the scenario started one) always stops: its console pipes belong to
     # this process, so it could not outlive it usefully, not even with -KeepOpen.
