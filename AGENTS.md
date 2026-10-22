@@ -235,7 +235,9 @@ needs at least one commit to build.
   (the client also predicts exhaustion locally: it can briefly read above 4 until the server's
   saturation/hunger step arrives one tick later).
 - Verified against a real **Bedrock Dedicated Server 1.26.51.1** (official build matching the
-  1.26.51.01 client; e2e scenario `remote`, see `tools/e2e/README.md`): the food state comes from
+  1.26.51.01 client, NetherNet, on 2026-10-21) and against the same build with LeviLamina 26.51.7
+  and no server mods over RakNet (the e2e default since 2026-10-23: no online signaling needed;
+  e2e scenario `remote`, see `tools/e2e/README.md`): the food state comes from
   the client attributes (`source=client`, `exact=false`) and follows server-side `/effect hunger`,
   `/damage`, eating (cooked beef: +8 hunger, saturation +12.8 capped at hunger), sprinting
   (exhaustion), Health Boost (max health 40, two heart rows), `/gamerule naturalregeneration false`

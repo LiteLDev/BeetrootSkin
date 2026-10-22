@@ -3,11 +3,13 @@
 # local world, and start with the food debug info hidden (F6 turns it on in the scenario; the
 # previous value is put back by remote.restore.ps1).
 #
-# Every game on this PC signs in to Minecraft's signaling service with the same ID, and a game
-# starting elsewhere (any slot, any project) knocks out this client's NetherNet session ("Multiplayer
-# Connection Failed ... NetherNet"). Hold LeviHeadlessInput's signaling lock EXCLUSIVE: the shim's
-# Start-Game blocks new games, waits for running ones to close, and Stop-Game releases it.
-$script:ExclusiveSignaling = $true
+# Only the vanilla server needs NetherNet. Every game on this PC signs in to Minecraft's signaling
+# service with the same ID, and a game starting elsewhere (any slot, any project) knocks out this
+# client's NetherNet session ("Multiplayer Connection Failed ... NetherNet"). For that flavor, hold
+# LeviHeadlessInput's signaling lock EXCLUSIVE: the shim's Start-Game blocks new games and waits for
+# running ones to close; Stop-Game releases it. The default LeviLamina server uses RakNet (a
+# direct connection), which other games cannot disturb, so `remote` can run in parallel.
+$script:ExclusiveSignaling = ($script:BdsFlavor -eq 'vanilla')
 $cfg = Join-Path $script:ModsDir "$script:ModName\config\config.json"
 if (Test-Path $cfg) {
     $json = Get-Content $cfg -Raw | ConvertFrom-Json

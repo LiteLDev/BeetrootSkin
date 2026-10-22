@@ -1010,11 +1010,23 @@ function Reset-Player {
 # BDS lives outside the repository. 1.26.51.1 is the server build of the client's 1.26.51.01.
 $script:BdsRoot      = Join-Path $env:LOCALAPPDATA 'BeetrootSkin-bds'
 $script:BdsVersion   = '1.26.51.1'
-$script:BdsPort      = 19132
-# BDS 1.26.51 accepts only NetherNet ("transport=raknet" logs "TRANSPORT TYPE ERROR ... NetherNet
-# is the only supported transport type"), which needs Minecraft's online signaling service on both
-# sides even for 127.0.0.1, so the client can fail with "Multiplayer Connection Failed".
-$script:BdsTransport = 'nethernet'
+# Not the default 19132 (any client or LAN discovery tries that first) and outside the 19200+ band
+# other projects' e2e servers use. IPv6 uses the next port (server-portv6).
+$script:BdsPort      = 19180
+# Server flavor ($env:BEETROOT_BDS_FLAVOR):
+# - 'levilamina' (default): the same BDS build with LeviLamina and no server mods
+#   (bedrock_server_mod.exe, installed by `get-bds.ps1 -Flavor levilamina` with lip). It accepts
+#   transport=raknet: a direct UDP connection to 127.0.0.1 that needs no online service, so it works
+#   on any network and while other games are signed in. BeetrootSkin is client-only, and a server
+#   without mods behaves like vanilla for what `remote` checks.
+# - 'vanilla': the official bedrock_server.exe. It accepts only NetherNet ("transport=raknet" logs
+#   "TRANSPORT TYPE ERROR ... NetherNet is the only supported transport type"). NetherNet needs
+#   Minecraft's online signaling service (and the network path WebRTC needs) on both sides even for
+#   127.0.0.1, so the client can fail with "Multiplayer Connection Failed ... NetherNet".
+$script:BdsFlavor    = if ($env:BEETROOT_BDS_FLAVOR -eq 'vanilla') { 'vanilla' } else { 'levilamina' }
+$script:BdsLeviLaminaVersion = '26.51.7'
+$script:BdsTransport = if ($script:BdsFlavor -eq 'levilamina') { 'raknet' } else { 'nethernet' }
+$script:BdsExeName   = if ($script:BdsFlavor -eq 'levilamina') { 'bedrock_server_mod.exe' } else { 'bedrock_server.exe' }
 $script:BdsLevelName = 'BeetrootSkin-Remote'
 $script:BdsServerName = 'BeetrootSkin e2e'   # entry Join-Bds adds to the client's server list
 $script:Bds          = $null   # BsE2E.BdsProcess while a server runs
@@ -1076,7 +1088,10 @@ public sealed class BdsProcess {
 '@
 }
 
-function Get-BdsDir([string]$Version = $script:BdsVersion) { Join-Path $script:BdsRoot $Version }
+function Get-BdsDir([string]$Version = $script:BdsVersion) {
+    if ($script:BdsFlavor -eq 'levilamina') { return Join-Path $script:BdsRoot "levilamina-$script:BdsLeviLaminaVersion" }
+    return Join-Path $script:BdsRoot $Version
+}
 
 # Rewrite key=value lines of server.properties (keys that are missing are appended).
 function Set-BdsProperties([hashtable]$Properties, [string]$Version = $script:BdsVersion) {
@@ -1099,15 +1114,21 @@ function Start-Bds([string]$Unit = 'bds', [string]$Version = $script:BdsVersion,
     Enter-BdsLock
     Stop-Bds -Leftovers
     $dir = Get-BdsDir $Version
-    $exe = Join-Path $dir 'bedrock_server.exe'
-    if (-not (Test-Path $exe)) { throw "BDS $Version not found in $dir; run tools/e2e/get-bds.ps1 -Version $Version" }
+    $exe = Join-Path $dir $script:BdsExeName
+    if (-not (Test-Path $exe)) {
+        $hint = if ($script:BdsFlavor -eq 'levilamina') { "-Flavor levilamina" } else { "-Flavor vanilla -Version $Version" }
+        throw "BDS ($script:BdsFlavor) not found in $dir; run tools/e2e/get-bds.ps1 $hint"
+    }
     Set-BdsProperties @{
         'server-name' = $script:BdsServerName; 'gamemode' = 'survival'; 'difficulty' = 'normal'; 'allow-cheats' = 'true'
         'online-mode' = 'true'; 'allow-list' = 'false'; 'level-name' = $script:BdsLevelName
-        'server-port' = $script:BdsPort; 'server-ip' = '127.0.0.1'; 'enable-lan-visibility' = 'false'
+        'server-port' = $script:BdsPort; 'server-portv6' = ($script:BdsPort + 1); 'server-ip' = '127.0.0.1'; 'enable-lan-visibility' = 'false'
         'transport' = $script:BdsTransport
         'default-player-permission-level' = 'operator'; 'player-idle-timeout' = '0'
     } $Version
+    foreach ($p in $script:BdsPort, ($script:BdsPort + 1)) {
+        try { $u = [System.Net.Sockets.UdpClient]::new($p); $u.Dispose() } catch { throw "UDP port $p is in use; the e2e BDS needs $($script:BdsPort)/$($script:BdsPort + 1)" }
+    }
     $world = Join-Path $dir "worlds\$script:BdsLevelName"
     if (Test-Path $world) { Remove-Item -Recurse -Force $world }
     $zip = Join-Path $script:RepoRoot "tools\e2e\fixtures\$script:WorldName.zip"
@@ -1119,8 +1140,9 @@ function Start-Bds([string]$Unit = 'bds', [string]$Version = $script:BdsVersion,
     $logDir = Get-UnitOutDir $Unit
     New-Item -ItemType Directory -Force $logDir | Out-Null
     $script:Bds = [BsE2E.BdsProcess]::Start($exe, (Join-Path $logDir 'bds.log'))
-    Write-Step "BDS $Version starting (pid $($script:Bds.Id), 127.0.0.1:$script:BdsPort)"
-    Wait-BdsLine 'Server started\.' 0 $TimeoutSeconds | Out-Null
+    Write-Step "BDS $(if ($script:BdsFlavor -eq 'levilamina') { "+LeviLamina $script:BdsLeviLaminaVersion" } else { $Version }) starting ($script:BdsTransport, pid $($script:Bds.Id), 127.0.0.1:$script:BdsPort)"
+    # Vanilla prints 'Server started.', LeviLamina 'Server started in (3.6s)! ...'.
+    Wait-BdsLine 'Server started[. ]' 0 $TimeoutSeconds | Out-Null
     Write-Step "BDS started"
 }
 
@@ -1170,7 +1192,7 @@ function Stop-Bds([switch]$Leftovers) {
         # Match on the folder name, not the full path: a packaged (MSIX) shell sees %LOCALAPPDATA%
         # redirected to its package's LocalCache\Local, so the process path differs from $BdsRoot.
         $leaf = '\' + (Split-Path $script:BdsRoot -Leaf) + '\'
-        Get-Process -Name 'bedrock_server' -ErrorAction SilentlyContinue | Where-Object {
+        Get-Process -Name 'bedrock_server', 'bedrock_server_mod' -ErrorAction SilentlyContinue | Where-Object {
             $_.Path -and $_.Path.IndexOf($leaf, [StringComparison]::OrdinalIgnoreCase) -ge 0
         } | ForEach-Object { Write-Step "killing leftover BDS pid $($_.Id)"; $_.Kill($true); $_.WaitForExit(5000) | Out-Null }
         if ($held) { return }   # Start-Bds keeps the lock for the server it is about to start
@@ -1286,6 +1308,15 @@ function Join-Bds([int]$Attempts = 3) {
             return
         } catch {
             Save-Screenshot "join-failed-$attempt" $script:Unit | Out-Null
+            # "Show details" on "Multiplayer Connection Failed": the error code tells signaling,
+            # NAT/ICE and server-side failures apart. Closing the details returns to the dialog.
+            try {
+                Click 0.5 0.713 -Relative
+                Start-Sleep -Seconds 2
+                Save-Screenshot "join-failed-$attempt-details" $script:Unit | Out-Null
+                Press-Key ESC
+                Start-Sleep -Seconds 2
+            } catch { Write-Step "could not capture connection error details: $_" }
             # A player that reached the server (in the world or half-joined) is a real failure.
             if ($attempt -eq $Attempts -or (Get-BdsLog $bdsAt | Select-String 'Player connected: ')) { throw }
             Write-Step "server join failed (attempt $attempt): $_; retrying"
