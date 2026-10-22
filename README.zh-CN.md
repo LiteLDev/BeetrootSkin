@@ -18,6 +18,7 @@ BeetrootSkin 把 Java 版 [AppleSkin](https://github.com/squeek502/AppleSkin) �
 - [安装](#安装)
 - [使用](#使用)
 - [配置](#配置)
+- [API](#api)
 - [构建](#构建)
 - [维护者](#维护者)
 - [参与贡献](#参与贡献)
@@ -92,6 +93,53 @@ lip install github.com/LiteLDev/BeetrootSkin#client
 | `version` | `1` | 配置格式版本，由模组管理，请勿修改。 |
 
 缺失的键使用默认值；当前版本不认识的键会在保存时原样保留。如果模组自行保存文件（例如按下 `F6` 后）时，文件中有模组无法读取的内容，该内容会先被复制到 `config.json.bak`。
+
+## API
+
+其他 LeviLamina 模组可以通过 [AppleSkin API](https://github.com/squeek502/AppleSkin/tree/1.21.11-neoforge/java/squeek/appleskin/api) 的 C++ 移植与 BeetrootSkin 集成。这些事件是 `ll::event::EventBus` 上的 LeviLamina 事件，在客户端线程上发布：
+
+| 事件 | 时机 | 取消后 |
+| --- | --- | --- |
+| `beetroot::api::FoodValuesEvent` | BeetrootSkin 确定某个物品的食物数值时（提示框，以及所有 HUD 预览所用的手持食物）。修改 `modifiedFoodValues()`（或 `defaultFoodValues()`）后，所有显示都使用修改后的数值，提示框会像 AppleSkin 一样用描边区分默认值与修改值。 | （不可取消） |
+| `beetroot::api::TooltipOverlayEvent::Pre` | 即将向提示框加入食物数值。 | 该物品不显示食物数值 |
+| `beetroot::api::TooltipOverlayEvent::Render` | 即将绘制食物数值（可修改 `x()`/`y()`，可用 `renderContext()` 自行绘制）。 | 保留空间但不绘制 |
+| `beetroot::api::HUDOverlayEvent::Exhaustion` | 绘制消耗度底条（`exhaustion()`）。 | 隐藏消耗度底条 |
+| `beetroot::api::HUDOverlayEvent::Saturation` | 绘制饱和度叠加层（`saturationLevel()`）。 | 隐藏饱和度叠加层及手持食物的饱和度增量 |
+| `beetroot::api::HUDOverlayEvent::HungerRestored` | 绘制手持食物的饥饿值预览（`currentFoodLevel()`、`itemStack()`、`foodValues()`）。 | 隐藏饥饿值预览 |
+| `beetroot::api::HUDOverlayEvent::HealthRestored` | 绘制手持食物的生命值预览（`modifiedHealth()`、`itemStack()`、`foodValues()`）。 | 隐藏生命值预览 |
+
+HUD 事件带有叠加层的位置（GUI 单位，`x()`/`y()`，修改即可移动）：饥饿条的右边缘和顶部，或者心形条的左边缘和最下一行的顶部。`beetroot::api::FoodValues` 包含 `hunger`、`saturation`（获得的饱和度）和 `canAlwaysEat`。另外导出了两个函数：`apiVersion()` 和 `queryFoodValues(stack, player)`（物品的默认值与修改值，会触发 `FoodValuesEvent`）。
+
+使用方法：
+
+1. 获取 SDK：从发布页下载 `beetrootskin-sdk-client-windows-x64.zip`，或者自行构建 BeetrootSkin，SDK 会写到 `bin/BeetrootSkin-sdk/`。其中包含 `include/beetrootskin/api/*.h` 和 `lib/BeetrootSkin.lib`。
+2. 把 SDK 的 `include` 加入包含路径，并链接 `BeetrootSkin.lib`（这些头文件也需要 LeviLamina 的头文件）。
+3. 在你的 `manifest.json` 中声明依赖，使 BeetrootSkin 先于你的模组加载（并注册事件）：`"dependencies": [{ "name": "BeetrootSkin" }]`。
+4. 在模组的 `enable()` 中订阅：
+
+```cpp
+#include "beetrootskin/api/Events.h"
+
+#include "ll/api/event/EventBus.h"
+#include "mc/world/item/ItemStackBase.h"
+
+// In your mod's enable():
+auto& bus = ll::event::EventBus::getInstance();
+mListeners.push_back(bus.emplaceListener<beetroot::api::FoodValuesEvent>([](beetroot::api::FoodValuesEvent& ev) {
+    if (ev.itemStack().getTypeName() == "minecraft:bread") ev.modifiedFoodValues().hunger *= 2;
+}));
+mListeners.push_back(bus.emplaceListener<beetroot::api::HUDOverlayEvent::Exhaustion>(
+    [](beetroot::api::HUDOverlayEvent::Exhaustion& ev) { ev.cancel(); }
+));
+mListeners.push_back(bus.emplaceListener<beetroot::api::TooltipOverlayEvent::Pre>(
+    [](beetroot::api::TooltipOverlayEvent::Pre& ev) {
+        if (ev.itemStack().getTypeName() == "minecraft:apple") ev.cancel();
+    }
+));
+// In disable(): bus.removeListener(l) for each of them.
+```
+
+[samples/api_sample](samples/api_sample/ApiSample.cpp) 是一个完整的示例模组，正是这样做的；它通过 `xmake f --api_sample=y` 构建，供端到端场景 `api` 使用。
 
 ## 构建
 

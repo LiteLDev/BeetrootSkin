@@ -295,10 +295,13 @@ bool forceClientSource() { return gForceClient.load(std::memory_order_relaxed); 
 std::optional<HeldFood> heldFood() {
     auto* player = currentPlayer();
     if (!player) return std::nullopt;
-    if (auto food = getFoodValues(player->getSelectedItem(), player)) return HeldFood{std::move(*food), false};
-    if (app::config().showFoodValuesHudOverlayWhenOffhand) {
-        if (auto food = getFoodValues(player->getOffhandSlot(), player)) return HeldFood{std::move(*food), true};
-    }
+    auto held = [&](ItemStack const& stack, bool offhand) -> std::optional<HeldFood> {
+        auto q = queryFoodValues(stack, player);
+        if (!q) return std::nullopt;
+        return HeldFood{std::move(q->modifiedValues), offhand, &stack, std::move(q->defaultValues)};
+    };
+    if (auto food = held(player->getSelectedItem(), false)) return food;
+    if (app::config().showFoodValuesHudOverlayWhenOffhand) return held(player->getOffhandSlot(), true);
     return std::nullopt;
 }
 

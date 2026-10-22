@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Health-restored HUD preview: while holding food, the hearts that eating it would restore (Bedrock natural regeneration after eating plus the food's Regeneration effect) flash over the health bar, like AppleSkin's HealthRestored overlay.
 - Live config reload, like AppleSkin: `config/config.json` can be edited while the game runs and changes apply within about a second (logged as `Config reloaded: ...`). Invalid JSON keeps the current settings with one warning and the file is left untouched; the mod's own saves (`F6`) are not reloaded, a save right after an edit merges the edit in, and a save over invalid content first copies it to `config.json.bak`.
 - Saturation HUD overlay: golden outlines over the hunger shanks show the current saturation, and the saturation the held food would add flashes on top of them.
+- Public API for other LeviLamina mods, a port of AppleSkin's: `FoodValuesEvent` (change the food values every display uses; tooltips show default vs modified), `TooltipOverlayEvent::{Pre, Render}` and `HUDOverlayEvent::{Exhaustion, Saturation, HungerRestored, HealthRestored}` (cancellable, movable), as LeviLamina events; headers and import library in `bin/BeetrootSkin-sdk/`.
 
 ### Fixed
 
