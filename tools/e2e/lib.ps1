@@ -601,6 +601,10 @@ function Reset-Player {
 $script:BdsRoot      = Join-Path $env:LOCALAPPDATA 'BeetrootSkin-bds'
 $script:BdsVersion   = '1.26.51.1'
 $script:BdsPort      = 19132
+# BDS 1.26.51 accepts only NetherNet ("transport=raknet" logs "TRANSPORT TYPE ERROR ... NetherNet
+# is the only supported transport type"), which needs Minecraft's online signaling service on both
+# sides even for 127.0.0.1, so the client can fail with "Multiplayer Connection Failed".
+$script:BdsTransport = 'nethernet'
 $script:BdsLevelName = 'BeetrootSkin-Remote'
 $script:BdsServerName = 'BeetrootSkin e2e'   # entry Join-Bds adds to the client's server list
 $script:Bds          = $null   # BsE2E.BdsProcess while a server runs
@@ -689,6 +693,7 @@ function Start-Bds([string]$Unit = 'bds', [string]$Version = $script:BdsVersion,
         'server-name' = $script:BdsServerName; 'gamemode' = 'survival'; 'difficulty' = 'normal'; 'allow-cheats' = 'true'
         'online-mode' = 'true'; 'allow-list' = 'false'; 'level-name' = $script:BdsLevelName
         'server-port' = $script:BdsPort; 'server-ip' = '127.0.0.1'; 'enable-lan-visibility' = 'false'
+        'transport' = $script:BdsTransport
         'default-player-permission-level' = 'operator'; 'player-idle-timeout' = '0'
     } $Version
     $world = Join-Path $dir "worlds\$script:BdsLevelName"
@@ -774,8 +779,8 @@ function Invoke-BdsCommand([string]$Command, [int]$WaitMs = 700) {
 
 # From the title screen: Play -> Servers -> Add Server (127.0.0.1:$BdsPort) -> Play, then wait
 # until BDS reports the player and BeetrootSkin logs a food state from the client attributes.
-# Retrying is opt-in (-Attempts 2): the green-button loop already absorbs slow screens.
-function Join-Bds([int]$Attempts = 1) {
+# Further attempts cover transient NetherNet signaling failures of the client.
+function Join-Bds([int]$Attempts = 3) {
     if (-not $script:Bds) { throw "Start-Bds first" }
     for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
         $before = @(Get-LeviLog).Count
@@ -831,7 +836,16 @@ function Join-Bds([int]$Attempts = 1) {
             # player that is in the world (or half-joined) is a real failure.
             if ($attempt -eq $Attempts -or (Get-BdsLog $bdsAt | Select-String 'Player connected: ')) { throw }
             Write-Step "server join failed (attempt $attempt): $_; retrying"
-            for ($i = 0; $i -lt 2; $i++) { Press-Key ESC; Start-Sleep -Seconds 2 }
+            # The client's NetherNet transport sometimes fails to reach Minecraft's signaling
+            # service ("Multiplayer Connection Failed ... NetherNet"); its "Back to menu" leads to
+            # the title screen. Elsewhere (form, caution dialog) ESC twice does.
+            Click 0.24 0.713 -Relative   # "Back to menu" (an empty spot on the other screens)
+            # Wait for the title screen's green Play button. No ESC here: on the title screen it
+            # opens "Do you want to exit Minecraft?".
+            $deadline = (Get-Date).AddSeconds(30)
+            while ((Get-Date) -lt $deadline -and -not (Test-GreenButton 0.40 0.474)) { Start-Sleep -Seconds 1 }
+            if (-not (Test-GreenButton 0.40 0.474)) { throw "not back on the title screen after a failed join: $_" }
+            Start-Sleep -Seconds 2
         }
     }
 }

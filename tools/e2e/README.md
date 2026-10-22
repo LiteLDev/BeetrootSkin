@@ -99,7 +99,11 @@ pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario remote
   `$script:EnterWorld = { Join-Bds }`, so run.ps1 joins the server instead of the local world.
 - `Join-Bds` drives Play > Servers > "+ Add server" (name `BeetrootSkin e2e`, 127.0.0.1) > "Add and
   play" > "Proceed" on the "Third-party online play" caution, then waits for BDS's `Player
-  Spawned: <name>` (kept in `$script:BdsPlayer`) and a `Food state: ... source=client` line. The
+  Spawned: <name>` (kept in `$script:BdsPlayer`) and a `Food state: ... source=client` line. BDS
+  1.26.51 only supports the NetherNet transport (`transport=raknet` is rejected with "TRANSPORT
+  TYPE ERROR"), which uses Minecraft's online signaling service even for 127.0.0.1: the machine
+  needs internet access, and the client sometimes fails with "Multiplayer Connection Failed ...
+  NetherNet". `Join-Bds` then goes "Back to menu" and tries again (3 attempts). The
   `minecraft://connect/?serverUrl=...` deep link is **not usable**: on this machine it is handled
   by the Microsoft Store install of Minecraft (a different, unmodded version), not by the
   LeviLauncher instance. The added server-list entry is removed again by `Remove-BdsServerEntries`
