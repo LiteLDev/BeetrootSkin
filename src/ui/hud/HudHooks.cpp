@@ -51,7 +51,8 @@ std::optional<game::HeldFood> cachedHeldFood() {
     static int                           tick   = -1;
     static void const*                   player = nullptr;
     static std::optional<game::HeldFood> held;
-    auto*                                p = game::currentPlayer();
+    static bool                          offhand = true; ///< showFoodValuesHudOverlayWhenOffhand used
+    auto*                                p       = game::currentPlayer();
     if (!p) {
         tick   = -1;
         player = nullptr;
@@ -60,10 +61,13 @@ std::optional<game::HeldFood> cachedHeldFood() {
     }
     bool sameSlot =
         !held || (held->stack && held->stack == (held->offhand ? &p->getOffhandSlot() : &p->getSelectedItem()));
-    if (tick != gTick || player != p || !sameSlot) {
-        tick   = gTick;
-        player = p;
-        held   = game::heldFood();
+    // The option is part of the key: a live config reload applies even while ticks are paused.
+    bool wantOffhand = app::config().showFoodValuesHudOverlayWhenOffhand;
+    if (tick != gTick || player != p || !sameSlot || offhand != wantOffhand) {
+        tick    = gTick;
+        player  = p;
+        offhand = wantOffhand;
+        held    = game::heldFood();
     }
     return held;
 }

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hunger-restored HUD preview: the shanks the held food (main hand, or offhand) would fill flash on the hunger bar, green for rotten food (AppleSkin `showFoodValuesHudOverlay`).
 - Food debug info: AppleSkin's `hunger: N, sat: #.##, exh: 0.00/4` line, drawn at the top left of the HUD (above the vanilla position/day text and chat) when `showFoodDebugInfo` is on, and a remappable hotkey (default F6, listed in Settings > Keyboard & Mouse) that toggles and saves it.
 - Health-restored HUD preview: while holding food, the hearts that eating it would restore (Bedrock natural regeneration after eating plus the food's Regeneration effect) flash over the health bar, like AppleSkin's HealthRestored overlay.
+- Live config reload, like AppleSkin: `config/config.json` can be edited while the game runs and changes apply within about a second (logged as `Config reloaded: ...`). Invalid JSON keeps the current settings with one warning and the file is left untouched; the mod's own saves (`F6`) are not reloaded, a save right after an edit merges the edit in, and a save over invalid content first copies it to `config.json.bak`.
 - Saturation HUD overlay: golden outlines over the hunger shanks show the current saturation, and the saturation the held food would add flashes on top of them.
 - End-to-end harness: `controls` / `controls_zh` scenarios check the food debug info key in Settings > Keyboard & Mouse (localized name and default F6, English and Chinese), pause/settings navigation helpers, focus-steal recovery (re-focus retries with a log of the window that held the foreground), waiting out a locked workstation instead of failing, pause-menu ESC retries, restore of other mods and `options.txt` after an interrupted run, and `tools/e2e/restore-mods.ps1` for manual recovery.
 - Remote-server end-to-end test (`remote` scenario): the harness fetches the official Bedrock Dedicated Server (`tools/e2e/get-bds.ps1`), starts and stops it (`Start-Bds`, `Stop-Bds`, console commands via `Invoke-BdsCommand`) and joins it through the Servers tab; every BeetrootSkin feature is verified there from the server-synced client state.
@@ -23,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- README: `showFoodValuesInTooltipAlways` works without `showFoodValuesInTooltip` (as in AppleSkin and the code); the table said it needed it.
 - Sync diagnostics no longer forget the attribute and game-rule updates a remote server sends before the client's join event (the session state is now reset only on leaving).
 - The debug drawing (`src/debug/DebugDraw.cpp`, used by the `smoke` scenario) is now in the repository: `.gitignore`'s Visual Studio `[Dd]ebug/` rule had kept it out, so `smoke` failed on a clean checkout.
 - HUD overlays follow (or, with `showVanillaAnimationsOverlay` off, ignore) the vanilla hunger-bar shake correctly: the jitter is measured from a resting line learned from still frames instead of the highest shank of the frame (wrong while every shank shakes at saturation 0).

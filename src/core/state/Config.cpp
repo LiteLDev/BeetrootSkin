@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <iterator>
 #include <string_view>
@@ -78,9 +79,24 @@ void Config::sanitize() {
 }
 
 bool Config::fromJsonText(std::string_view text) {
-    *this  = Config{};
-    auto j = json::parse(text, nullptr, false);
-    if (j.is_discarded() || !j.is_object()) return false;
+    std::string ignored;
+    return fromJsonText(text, ignored);
+}
+
+bool Config::fromJsonText(std::string_view text, std::string& error) {
+    *this = Config{};
+    error.clear();
+    json j;
+    try {
+        j = json::parse(text);
+    } catch (json::exception const& e) {
+        error = e.what();
+        return false;
+    }
+    if (!j.is_object()) {
+        error = "not a JSON object";
+        return false;
+    }
 
     int fileVersion = 0;
     read(j, "version", fileVersion);
@@ -122,6 +138,37 @@ bool Config::load(std::filesystem::path const& file) {
     auto text = readFile(file);
     if (!text) return false;
     return fromJsonText(*text);
+}
+
+std::vector<std::string> changedFields(Config const& before, Config const& after) {
+    std::vector<std::string> out;
+    for (auto const& f : BOOL_FIELDS) {
+        if (before.*f.member != after.*f.member) {
+            out.push_back(std::string{f.key} + (after.*f.member ? "=true" : "=false"));
+        }
+    }
+    if (before.maxHudOverlayFlashAlpha != after.maxHudOverlayFlashAlpha) {
+        char buf[32];
+        auto res = std::to_chars(buf, buf + sizeof(buf), after.maxHudOverlayFlashAlpha);
+        out.push_back("maxHudOverlayFlashAlpha=" + std::string(buf, res.ptr));
+    }
+    if (before.version != after.version) out.push_back("version=" + std::to_string(after.version));
+    if (before.extraFields != after.extraFields) out.emplace_back("extraFields");
+    return out;
+}
+
+Config mergeConfig(Config const& base, Config const& ours, Config const& theirs) {
+    Config out = theirs;
+    for (auto const& f : BOOL_FIELDS) {
+        if (ours.*f.member != base.*f.member) out.*f.member = ours.*f.member;
+    }
+    if (ours.maxHudOverlayFlashAlpha != base.maxHudOverlayFlashAlpha) {
+        out.maxHudOverlayFlashAlpha = ours.maxHudOverlayFlashAlpha;
+    }
+    if (ours.extraFields != base.extraFields) out.extraFields = ours.extraFields;
+    out.version = std::max(ours.version, theirs.version);
+    out.sanitize();
+    return out;
 }
 
 bool Config::save(std::filesystem::path const& file) const { return writeFileAtomic(file, toJsonText()); }

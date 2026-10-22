@@ -9,10 +9,10 @@ The project layout, rules and harness come from the sibling project BEI (same au
 
 | Path | What it is |
 | ---- | ---------- |
-| `src/core/` | Pure C++ logic, **no `mc/` or `ll/` includes**. Static lib `beetroot-core`, unit-tested on the host. `food/FoodMath` (Bedrock hunger/saturation/regen math, flash animation, AppleSkin sprite math), `food/HealthPreview` (health-restored overlay plan, `restingIconY`), `state/Config` (+`AtomicWrite`), `geom/Rect`, `geom/IconRows` (`RestingRows`: resting line of a shaking HUD icon bar). |
+| `src/core/` | Pure C++ logic, **no `mc/` or `ll/` includes**. Static lib `beetroot-core`, unit-tested on the host. `food/FoodMath` (Bedrock hunger/saturation/regen math, flash animation, AppleSkin sprite math), `food/HealthPreview` (health-restored overlay plan, `restingIconY`), `state/Config` (+`AtomicWrite`, `FileWatch`: live-reload change detection), `geom/Rect`, `geom/IconRows` (`RestingRows`: resting line of a shaking HUD icon bar). |
 | `src/game/` | Adapters from game objects to core structs: `Game` (client/player/level helpers), `FoodValues` (item -> `core::FoodValues`), `PlayerFoodState` (local player -> `core::FoodState`, held food). |
 | `src/ui/` | Rendering: `gfx/Painter`, `hud/HudHooks` (HUD layer contract + plumbing), `tooltip/TooltipHooks` (tooltip extension contract + plumbing), `Keys` (`isShiftDown()`). |
-| `src/app/` | `Module` registry, `Mod` (paths, `config()`, `saveConfig()`, `debugDraw()`), `I18n` (`tr()`), `KeyNames` (controls-menu names of BeetrootSkin keys). |
+| `src/app/` | `Module` registry, `Mod` (paths, `config()`, `saveConfig()`, `pollConfigFile()`, `debugDraw()`), `ConfigWatch` (live config reload module), `I18n` (`tr()`), `KeyNames` (controls-menu names of BeetrootSkin keys). |
 | `src/mod/` | Entry point (`BeetrootSkin.cpp`), `Log.h`, `MemoryOperators.cpp`. Installs every registered module; **features never edit it**. |
 | `src/api/` | Implementation of the public API: registers the API events (`Api.cpp`, `onLoad()`), `Post.h` (`post`, `postCancellable`, cancellation logging). |
 | `include/beetrootskin/api/` | **Public API headers** for other mods (AppleSkin's API): `FoodValues.h`, `Events.h`, `event/{FoodValuesEvent,TooltipOverlayEvent,HUDOverlayEvent}.h`, `Macros.h` (`BEETROOTSKIN_API`). Copied with `BeetrootSkin.lib` to `bin/BeetrootSkin-sdk/` at build time. |
@@ -35,7 +35,9 @@ never change or remove existing ones); never edit `src/mod/`.
   `app::loadModules()`), before any `install()`: use it for things the game needs before mods are
   enabled, such as `ll::input::KeyRegistry` keys (see `features/debug_info`).
 - `app/Mod.h`: `modDir()`, `configDir()`, `modFile(rel)`, `config()` (a `core::Config&`),
-  `saveConfig()`, `debugDraw()`.
+  `saveConfig()`, `pollConfigFile()`, `debugDraw()`. `config()` is replaced as a whole when the
+  user edits config.json in game (`app/ConfigWatch.cpp` polls it after every UI render, stat about
+  once a second, `core::FileChangeDetector`): read options where they are used, never cache them.
 - `app/I18n.h`: `tr("beetroot.key", "English fallback")`.
 - `core/food/FoodMath.h`: `FoodValues`, `FoodEffect`, `FoodState`, `canEat`, `eat`/`EatResult`,
   `hungerPreviewIcons`, `saturationOverlayIcons`, `healthPreviewIcons`, `isHalfIcon`,

@@ -15,10 +15,19 @@ namespace beetroot::app {
 /// Absolute path of a mod-owned file, e.g. modFile("textures/icons.png").
 [[nodiscard]] std::filesystem::path modFile(std::filesystem::path const& relative);
 
-/// The live configuration (client thread). Loaded in BeetrootSkin::load().
+/// The live configuration (client thread). Loaded in BeetrootSkin::load() and replaced as a whole
+/// when the user edits config.json while the game runs (see pollConfigFile()): read it where it
+/// is used, never cache a copy or a field of it.
 [[nodiscard]] core::Config& config();
-/// Persist config() to configDir()/config.json (atomic). Returns false on I/O failure.
+/// Persist config() to configDir()/config.json (atomic). Returns false on I/O failure. Our own
+/// write is never reloaded. An edit on disk not picked up yet is merged in first (options the
+/// caller changed win); a file that is invalid or unreadable is copied to config.json.bak.
 bool saveConfig();
+/// Client thread. Stats config.json at most once a second (cheap to call every frame); when it
+/// changed on disk and stayed unchanged for 250 ms, re-reads it and replaces config() (logged as
+/// "Config reloaded: key=value, ..."). An invalid file is left alone and config() kept (one
+/// warning per change). Returns true if config() changed. Called by app/ConfigWatch.cpp.
+bool pollConfigFile();
 
 /// True if `<modDir>/debug_draw` exists (checked once at load): enables the scaffold's debug
 /// HUD layer and debug tooltip extension (src/debug/), used by the e2e smoke scenario.
