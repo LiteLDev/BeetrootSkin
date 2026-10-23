@@ -7,29 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-24
+
+First release.
+
 ### Added
 
-- Project scaffold: LeviLamina client mod build, configuration file (AppleSkin option names), Bedrock food math with unit tests, HUD and tooltip extension points, and an end-to-end test harness.
-- Exhaustion underlay behind the hunger bar (AppleSkin's `showFoodExhaustionHudUnderlay`), hidden in creative/spectator and whenever vanilla hides the hunger bar (Bedrock keeps it while riding and draws the mount's hearts above it).
-- Food-state accuracy (AppleSkin's sync equivalent): the integrated-server snapshot survives pauses and is cleared on leaving a world, the naturalregeneration game rule is looked up by name (the index lookup always read `true`), and source changes, synced attributes and rule/difficulty updates are logged; `mods/BeetrootSkin/force_client_sync` forces the remote-server (client attribute) path for testing.
-- Food tooltips: hunger and saturation icons for food items (hold Shift, or always), like AppleSkin.
-- Hunger-restored HUD preview: the shanks the held food (main hand, or offhand) would fill flash on the hunger bar, green for rotten food (AppleSkin `showFoodValuesHudOverlay`).
-- Food debug info: AppleSkin's `hunger: N, sat: #.##, exh: 0.00/4` line, drawn at the top left of the HUD (above the vanilla position/day text and chat) when `showFoodDebugInfo` is on, and a remappable hotkey (default F6, listed in Settings > Keyboard & Mouse) that toggles and saves it.
-- Health-restored HUD preview: while holding food, the hearts that eating it would restore (Bedrock natural regeneration after eating plus the food's Regeneration effect) flash over the health bar, like AppleSkin's HealthRestored overlay.
-- Live config reload, like AppleSkin: `config/config.json` can be edited while the game runs and changes apply within about a second (logged as `Config reloaded: ...`). Invalid JSON keeps the current settings with one warning and the file is left untouched; the mod's own saves (`F6`) are not reloaded, a save right after an edit merges the edit in, and a save over invalid content first copies it to `config.json.bak`.
-- Saturation HUD overlay: golden outlines over the hunger shanks show the current saturation, and the saturation the held food would add flashes on top of them.
-- End-to-end harness: `controls` / `controls_zh` scenarios check the food debug info key in Settings > Keyboard & Mouse (localized name and default F6, English and Chinese), pause/settings navigation helpers, focus-steal recovery (re-focus retries with a log of the window that held the foreground), waiting out a locked workstation instead of failing, pause-menu ESC retries, restore of other mods and `options.txt` after an interrupted run, and `tools/e2e/restore-mods.ps1` for manual recovery.
-- Remote-server end-to-end test (`remote` scenario): the harness fetches the official Bedrock Dedicated Server (`tools/e2e/get-bds.ps1`), starts and stops it (`Start-Bds`, `Stop-Bds`, console commands via `Invoke-BdsCommand`) and joins it through the Servers tab; every BeetrootSkin feature is verified there from the server-synced client state.
-- Public API for other LeviLamina mods, a port of AppleSkin's: `FoodValuesEvent` (change the food values every display uses; tooltips show default vs modified), `TooltipOverlayEvent::{Pre, Render}` and `HUDOverlayEvent::{Exhaustion, Saturation, HungerRestored, HealthRestored}` (cancellable, movable), as LeviLamina events; headers and import library in `bin/BeetrootSkin-sdk/`.
+- **Food values in tooltips**: the hunger (shanks) and saturation a food restores, drawn with AppleSkin's icons.
+  - Foods with harmful effects (rotten flesh, raw chicken, ...) use the "bad food" icons.
+  - Shown always by default, or only while `Shift` is held.
+- **Hunger and saturation restored preview**: while you hold food (main hand, or offhand), the hunger bar flashes the shanks and saturation that eating it would add.
+- **Saturation overlay**: your current saturation as golden outlines over the hunger bar.
+- **Exhaustion underlay**: a bar under the hunger bar that fills up as exhaustion builds toward the next point of saturation or hunger being used.
+  - Hidden in creative and spectator mode and whenever the game hides the hunger bar.
+- **Health restored preview**: while you hold food, the hearts flash the health eating it would restore, using Bedrock's rules:
+  - natural regeneration from the new hunger and saturation;
+  - the Regeneration effect of foods such as golden apples;
+  - hidden on Peaceful and when the `naturalregeneration` game rule is off.
+- **Debug info**: AppleSkin's `hunger: N, sat: #.##, exh: 0.00/4` line at the top left of the HUD.
+  - `F6` shows or hides it and saves the setting.
+  - The key can be remapped in *Settings → Keyboard & Mouse*.
+- **Vanilla animations**: the overlays follow the vanilla hunger-bar and low-health jitter (or stay still, with `showVanillaAnimationsOverlay` off).
+- **Multiplayer**: client-only; exact values from the integrated server in single-player and LAN worlds you host, the values the server syncs to the client on dedicated servers and joined worlds.
+- **Configuration** in `mods/BeetrootSkin/config/config.json` with AppleSkin's option names.
+  - Edits apply within about a second while the game runs.
+  - Invalid JSON keeps the current settings and leaves the file untouched.
+- **API** for other LeviLamina mods, a port of AppleSkin's:
+  - `FoodValuesEvent` changes the food values every display uses (tooltips then show default vs modified);
+  - `TooltipOverlayEvent::{Pre, Render}` and `HUDOverlayEvent::{Exhaustion, Saturation, HungerRestored, HealthRestored}` hide or move the overlays;
+  - headers and import library in `beetrootskin-sdk-client-windows-x64.zip`.
+- **Translations**: English and Simplified Chinese.
 
-### Fixed
-
-- End-to-end harness on game slots above 1: screenshots and logs go to `tools/e2e/out/<scenario>-slot<N>/` so parallel runs of one scenario no longer overwrite each other, and scenario `.restore.ps1` scripts now act on the slot the scenario used instead of always on slot 1.
-- End-to-end `remote` scenario: it now runs against the same BDS build with LeviLamina and no server mods over RakNet (`get-bds.ps1 -Flavor levilamina`, port 19180), because NetherNet joins to the official server failed on some networks (`InitialConnection-95`) and whenever another game on the PC signed in to Minecraft's signaling service. The official server stays available with `BEETROOT_BDS_FLAVOR=vanilla` (with LeviHeadlessInput's exclusive signaling lock). On a connection failure the harness captures the game's error details.
-- README: `showFoodValuesInTooltipAlways` works without `showFoodValuesInTooltip` (as in AppleSkin and the code); the table said it needed it.
-- Sync diagnostics no longer forget the attribute and game-rule updates a remote server sends before the client's join event (the session state is now reset only on leaving).
-- The debug drawing (`src/debug/DebugDraw.cpp`, used by the `smoke` scenario) is now in the repository: `.gitignore`'s Visual Studio `[Dd]ebug/` rule had kept it out, so `smoke` failed on a clean checkout.
-- HUD overlays follow (or, with `showVanillaAnimationsOverlay` off, ignore) the vanilla hunger-bar shake correctly: the jitter is measured from a resting line learned from still frames instead of the highest shank of the frame (wrong while every shank shakes at saturation 0).
-- Heart jitter (vanilla low-health shake) is now reported to HUD layers, so the health preview honors `showVanillaAnimationsOverlay`.
-- Textured quads of different textures recorded between two flushes all draw correctly (the Painter splits its batches per texture); the food tooltip no longer flushes after every quad.
-- On Peaceful, food counts as edible even with a full hunger bar, like Bedrock: the saturation gain preview shows for a full bar (the health preview stays hidden on Peaceful, hunger/saturation previews in Creative).
+[Unreleased]: https://github.com/LiteLDev/BeetrootSkin/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/LiteLDev/BeetrootSkin/releases/tag/v0.1.0

@@ -171,3 +171,5 @@ BeetrootSkin is free software: you can redistribute it and/or modify it under th
 The textures in `assets/textures/` are from AppleSkin by squeek502 and are released under the Unlicense. See [assets/textures/NOTICE](assets/textures/NOTICE).
 
 BeetrootSkin is not affiliated with Mojang Studios, Microsoft, or the AppleSkin project.
+
+BeetrootSkin is not affiliated with Mojang Studios, Microsoft, or the AppleSkin project.

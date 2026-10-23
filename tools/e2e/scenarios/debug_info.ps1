@@ -1,6 +1,6 @@
 # Food debug info (AppleSkin's F3 line) and its F6 toggle hotkey.
 # Screenshots: out/debug_info/
-#   on.png           right after F6: the line and the "AppleSkin debug info: on" action bar text
+#   on.png           right after F6: the line and the "BeetrootSkin debug info: on" action bar text
 #   exhaustion.png   after sprinting/jumping: exh value grew
 #   coordinates.png  with /gamerule showcoordinates + showdaysplayed: vanilla text and chat stay below the line
 #   hide_gui.png     F1 (hide GUI) hides the line too
@@ -62,11 +62,26 @@ Start-Sleep -Seconds 8 # let the chat messages fade
 Save-Screenshot 'coordinates_clean' $u | Out-Null
 
 # --- F1 hides the HUD, including our line ---------------------------------------------------
-Press-VK $VK_F1
-Start-Sleep -Milliseconds 500
+# The leftmost heart (full health after Reset-Player) tells whether the HUD is shown. A lost F1
+# is pressed again: the game saves the hidden HUD to options.txt, so leaving it hidden would
+# break the scenarios that run on this instance afterwards.
+function Test-HudShown {
+    $v = @((Get-PixelColors @(, @(0.338, 0.878))) -split ',' | ForEach-Object { [int]$_ })
+    return $v[0] -gt 150 -and $v[1] -lt 80 -and $v[2] -lt 80
+}
+function Set-HudShown([bool]$shown) {
+    for ($i = 0; $i -lt 3; $i++) {
+        Press-VK $VK_F1
+        Start-Sleep -Milliseconds 500
+        if ((Test-HudShown) -eq $shown) { return }
+        Write-Step "F1 did not $(if ($shown) { 'show' } else { 'hide' }) the HUD yet; pressing it again"
+    }
+    throw "F1 did not $(if ($shown) { 'show' } else { 'hide' }) the HUD"
+}
+if (-not (Test-HudShown)) { throw "the HUD (leftmost heart) is not shown before F1" }
+Set-HudShown $false
 Save-Screenshot 'hide_gui' $u | Out-Null
-Press-VK $VK_F1
-Start-Sleep -Milliseconds 500
+Set-HudShown $true
 
 # --- F6: off ---------------------------------------------------------------------------------
 $before = @(Get-LeviLog).Count

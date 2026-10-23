@@ -149,12 +149,15 @@ Wait-NewLogLine 'Sync: food state source \w+ -> integrated-server' $logAt 30 | O
 # (verified: level.dat on disk had the new rule, the reopened world had the old one, on any slot).
 $rules = Wait-NewLogLine 'Sync: server sent game rules: .*naturalRegeneration=(true|false)' $logAt 30
 $serverRegen = [regex]::Match($rules, 'naturalRegeneration=(true|false)').Groups[1].Value
-Wait-NewLogLine "Sync: client level peaceful=false naturalRegen=$serverRegen" $logAt 30 | Out-Null
+# An older save can also have the earlier Peaceful difficulty (difficulty 0).
+$difficulty = Wait-NewLogLine 'Sync: server sent difficulty \d+' $logAt 30
+$serverPeaceful = if ([regex]::Match($difficulty, 'difficulty (\d+)').Groups[1].Value -eq '0') { 'true' } else { 'false' }
+Wait-NewLogLine "Sync: client level peaceful=$serverPeaceful naturalRegen=$serverRegen" $logAt 30 | Out-Null
 Start-Sleep -Seconds 2
 $s = Get-State
-Assert-That ($s.source -eq 'integrated-server' -and $s.naturalRegen -eq $serverRegen) "after rejoin: integrated server source, naturalRegen=$serverRegen as the reloaded world says"
-if ($serverRegen -ne 'false') {
-    Write-Step "note: the game reopened an older save of the world (naturalRegeneration=true, hunger $($s.hunger)); BeetrootSkin followed it"
+Assert-That ($s.source -eq 'integrated-server' -and $s.naturalRegen -eq $serverRegen -and $s.peaceful -eq $serverPeaceful) "after rejoin: integrated server source, peaceful=$serverPeaceful naturalRegen=$serverRegen as the reloaded world says"
+if ($serverRegen -ne 'false' -or $serverPeaceful -ne 'false') {
+    Write-Step "note: the game reopened an older save of the world (peaceful=$serverPeaceful, naturalRegeneration=$serverRegen, hunger $($s.hunger)); BeetrootSkin followed it"
 } else {
     Assert-That ($s.hunger -eq 20 -and $s.health -eq 20) "after rejoin: values of the respawned player (hunger $($s.hunger), health $($s.health))"
 }
