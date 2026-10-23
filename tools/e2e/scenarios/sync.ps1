@@ -111,16 +111,42 @@ Save-Screenshot 'respawned' $u | Out-Null
 
 # --- Leave and rejoin: state cleared on exit, rules re-read from the saved world ---------------
 $logAt = @(Get-LeviLog).Count
+# The rejoin must see what "Save & Quit" wrote. Under load (several games at once) the save can
+# still be in flight when the title screen shows; rejoining then loads the previous save (old game
+# rules, pre-death player). So wait until level.dat has been rewritten after the quit.
+$levelDat   = Join-Path (Join-Path (Get-WorldsDir) $script:WorldName) 'level.dat'
+$savedAfter = Get-Date
 Focus-Game
 Press-Key ESC; Start-Sleep -Seconds 2
 Save-Screenshot 'pause' $u | Out-Null
 Click 0.294 0.667 -Relative  # "Save & Quit" on the pause screen at 1600x900 (left column)
 Wait-NewLogLine 'Sync: left level' $logAt 20 | Out-Null
+$deadline = (Get-Date).AddSeconds(60)
+while ((Get-Item $levelDat).LastWriteTime -lt $savedAfter) {
+    if ((Get-Date) -gt $deadline) { throw "level.dat was not saved within 60 s of Save & Quit ($levelDat)" }
+    Start-Sleep -Milliseconds 500
+}
+# level.dat is not enough: LevelDB flushes db\ separately and holds db\LOCK until the integrated
+# server has closed the database. Reopening the world before that loads the previous save.
+$dbLock = Join-Path (Split-Path $levelDat) 'db\LOCK'
+while ($true) {
+    try { [IO.File]::Open($dbLock, 'Open', 'ReadWrite', 'None').Dispose(); break }
+    catch [IO.FileNotFoundException] { break }
+    catch [IO.IOException] {
+        if ((Get-Date) -gt $deadline) { throw "the world's LevelDB was still open 60 s after Save & Quit ($dbLock)" }
+        Start-Sleep -Milliseconds 250
+    }
+}
+Write-Step "world saved and closed (level.dat $((Get-Item $levelDat).LastWriteTime.ToString('HH:mm:ss.fff')), db closed $((Get-Date).ToString('HH:mm:ss.fff')))"
 Start-Sleep -Seconds 5
 Save-Screenshot 'title' $u | Out-Null
 Enter-TestWorld
 Wait-NewLogLine 'Sync: food state source \w+ -> integrated-server' $logAt 30 | Out-Null
-Wait-NewLogLine 'Sync: client level peaceful=false naturalRegen=false' $logAt 30 | Out-Null
+try { Wait-NewLogLine 'Sync: client level peaceful=false naturalRegen=false' $logAt 30 | Out-Null }
+catch {
+    $seen = Get-LeviLog | Select-Object -Skip $logAt | Select-String 'Sync: client level ' | Select-Object -Last 1
+    throw "world reloaded from an older save: expected naturalRegen=false after the rejoin, the game reported '$($seen.Line)'"
+}
 $s = Get-State
 Assert-That ($s.source -eq 'integrated-server' -and $s.naturalRegen -eq 'false') "after rejoin: integrated server source, naturalRegen=false kept"
 Assert-That ($s.hunger -eq 20 -and $s.health -eq 20) "after rejoin: values of the respawned player (hunger $($s.hunger), health $($s.health))"
