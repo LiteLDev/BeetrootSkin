@@ -113,8 +113,8 @@ void toggle() {
     log().info("Food debug info {}", on ? "shown" : "hidden");
     auto* client = game::currentClient();
     if (!client) return;
-    auto message = on ? app::tr("beetroot.debug_info.toggled_on", "AppleSkin debug info: on")
-                      : app::tr("beetroot.debug_info.toggled_off", "AppleSkin debug info: off");
+    auto message = on ? app::tr("beetroot.debug_info.toggled_on", "BeetrootSkin debug info: on")
+                      : app::tr("beetroot.debug_info.toggled_off", "BeetrootSkin debug info: off");
     client->getGuiData()->setActionBarMessage(message, std::nullopt);
 }
 

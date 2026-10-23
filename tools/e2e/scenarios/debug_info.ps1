@@ -1,6 +1,6 @@
 # Food debug info (AppleSkin's F3 line) and its F6 toggle hotkey.
 # Screenshots: out/debug_info/
-#   on.png           right after F6: the line and the "AppleSkin debug info: on" action bar text
+#   on.png           right after F6: the line and the "BeetrootSkin debug info: on" action bar text
 #   exhaustion.png   after sprinting/jumping: exh value grew
 #   coordinates.png  with /gamerule showcoordinates + showdaysplayed: vanilla text and chat stay below the line
 #   hide_gui.png     F1 (hide GUI) hides the line too
