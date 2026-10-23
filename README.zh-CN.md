@@ -171,3 +171,5 @@ BeetrootSkin 是自由软件：你可以依据 GNU 宽通用公共许可证第 3
 `assets/textures/` 中的贴图来自 squeek502 的 AppleSkin，以 Unlicense 发布。参见 [assets/textures/NOTICE](assets/textures/NOTICE)。
 
 BeetrootSkin 与 Mojang Studios、Microsoft 及 AppleSkin 项目均无关联。
+
+BeetrootSkin 与 Mojang Studios、Microsoft 及 AppleSkin 项目均无关联。
