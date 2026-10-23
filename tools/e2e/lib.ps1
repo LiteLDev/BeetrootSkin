@@ -459,6 +459,74 @@ function Set-WorldByteRule([string]$WorldDir, [string]$Rule, [byte]$Value) {
     }
 }
 
+# Diagnostics for world save problems: logs the level.dat rotation state (level.dat, level.dat_new,
+# level.dat_old with mtime and the value of a byte game rule), the db\ files, and, when a
+# level.dat_new was left behind (the game could not swap it in), which processes hold level.dat
+# (Restart Manager). Reads with full sharing, so it never blocks the game's own rename.
+function Write-WorldSaveState([string]$WorldDir, [string]$Rule = 'naturalregeneration') {
+    foreach ($f in 'level.dat', 'level.dat_new', 'level.dat_old') {
+        $path = Join-Path $WorldDir $f
+        if (-not (Test-Path $path)) { Write-Step "world: $f missing"; continue }
+        $value = '?'
+        try {
+            $fs = [IO.File]::Open($path, 'Open', 'Read', 'ReadWrite, Delete')
+            try { $bytes = New-Object byte[] $fs.Length; [void]$fs.Read($bytes, 0, $bytes.Length) } finally { $fs.Dispose() }
+            $b = [System.Collections.Generic.List[byte]]::new($bytes)
+            $p = Find-NbtTag $b 1 $Rule
+            if ($p -ge 0) { $value = $b[$p] }
+        } catch { $value = "unreadable: $($_.Exception.Message)" }
+        Write-Step "world: $f $((Get-Item $path).LastWriteTime.ToString('HH:mm:ss.fff')) $Rule=$value"
+    }
+    Get-ChildItem (Join-Path $WorldDir 'db') -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | ForEach-Object {
+        Write-Step "world: db\$($_.Name) $($_.Length) bytes $($_.LastWriteTime.ToString('HH:mm:ss.fff'))"
+    }
+    if (Test-Path (Join-Path $WorldDir 'level.dat_new')) {
+        foreach ($h in @(Get-FileHolders (Join-Path $WorldDir 'level.dat'))) { Write-Step "world: level.dat held by $h" }
+    }
+}
+
+# Processes that have a file open, via the Restart Manager API ("pid name" strings).
+function Get-FileHolders([string]$Path) {
+    if (-not ('BsE2E.RestartManager' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+namespace BsE2E {
+public static class RestartManager {
+    [StructLayout(LayoutKind.Sequential)] struct RM_UNIQUE_PROCESS { public int dwProcessId; public System.Runtime.InteropServices.ComTypes.FILETIME ProcessStartTime; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct RM_PROCESS_INFO {
+        public RM_UNIQUE_PROCESS Process;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string strAppName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string strServiceShortName;
+        public int ApplicationType; public uint AppStatus; public uint TSSessionId; [MarshalAs(UnmanagedType.Bool)] public bool bRestartable;
+    }
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)] static extern int RmStartSession(out uint h, int flags, string key);
+    [DllImport("rstrtmgr.dll")] static extern int RmEndSession(uint h);
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)] static extern int RmRegisterResources(uint h, uint nFiles, string[] files, uint nApps, IntPtr apps, uint nSvc, string[] svc);
+    [DllImport("rstrtmgr.dll")] static extern int RmGetList(uint h, out uint needed, ref uint count, [In, Out] RM_PROCESS_INFO[] info, ref uint reasons);
+    public static List<string> Holders(string path) {
+        var result = new List<string>();
+        uint h; if (RmStartSession(out h, 0, Guid.NewGuid().ToString()) != 0) return result;
+        try {
+            if (RmRegisterResources(h, 1, new[] { path }, 0, IntPtr.Zero, 0, null) != 0) return result;
+            uint needed = 0, count = 0, reasons = 0;
+            int rc = RmGetList(h, out needed, ref count, null, ref reasons);
+            if (rc == 234 && needed > 0) {
+                var info = new RM_PROCESS_INFO[needed]; count = needed;
+                if (RmGetList(h, out needed, ref count, info, ref reasons) == 0)
+                    for (int i = 0; i < count; i++) result.Add(info[i].Process.dwProcessId + " " + info[i].strAppName);
+            }
+        } finally { RmEndSession(h); }
+        return result;
+    }
+}
+}
+'@
+    }
+    return [BsE2E.RestartManager]::Holders($Path)
+}
+
 function Restore-TestWorld {
     $zip = Join-Path $script:RepoRoot "tools\e2e\fixtures\$script:WorldName.zip"
     if (-not (Test-Path $zip)) { Write-Step "no world fixture, skipping restore"; return }
