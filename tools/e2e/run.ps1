@@ -70,6 +70,7 @@ try {
     if (Get-GameProcess) { Write-Step "closing a running game first"; Stop-Game }
     # Leftovers of a killed run: options.txt backup (Disable-OtherMods puts mods back itself).
     Restore-GameOptions
+    Show-HudOnLaunch
     Disable-OtherMods
     if (-not $NoDeploy) { Deploy-Mod }
     Remove-HeadlessInputMod   # leftover of a killed or -KeepOpen run

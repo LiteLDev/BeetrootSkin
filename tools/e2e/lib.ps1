@@ -381,6 +381,18 @@ function Set-OptionLine([string]$File, [string]$Key, $Line) {
     $lines | Set-Content $File -Encoding utf8NoBOM
 }
 
+# Every scenario starts with the HUD shown. F1 (hide GUI) is saved to options.txt as
+# gfx_hidehud:1, so a toggle a scenario failed to undo would otherwise hide the HUD (and every
+# BeetrootSkin overlay) in all later runs on that game instance.
+function Show-HudOnLaunch {
+    $f = Get-GameOptionsFile
+    if (-not $f) { return }
+    if ((Get-OptionLine @(Get-Content $f) 'gfx_hidehud') -eq 'gfx_hidehud:1') {
+        Set-OptionLine $f 'gfx_hidehud' 'gfx_hidehud:0'
+        Write-Step "options.txt: gfx_hidehud was 1 (HUD hidden by an earlier run); set to 0"
+    }
+}
+
 function Set-GameOption([string]$Key, [string]$Value) {
     $f = Get-GameOptionsFile
     if (-not $f) { throw "options.txt not found under $(Get-GameDataDir)" }
