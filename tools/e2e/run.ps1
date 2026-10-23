@@ -9,7 +9,8 @@
   LeviLamina log for errors and always closes the game, restores the other mods and releases
   the lock.
 
-  Screenshots land in tools\e2e\out\<Scenario>\. Review them (they are the evidence).
+  Screenshots land in tools\e2e\out\<Scenario>\ (slot 1) or tools\e2e\out\<Scenario>-slot<N>\ (slot N > 1).
+  Review them (they are the evidence).
 
   By default the run is headless: the LeviHeadlessInput mod (https://github.com/LiteLDev/LeviHeadlessInput, see
   $script:HeadlessInputDir in lib.ps1) is deployed next to BeetrootSkin and every click, key and

@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- End-to-end harness on game slots above 1: screenshots and logs go to `tools/e2e/out/<scenario>-slot<N>/` so parallel runs of one scenario no longer overwrite each other, and scenario `.restore.ps1` scripts now act on the slot the scenario used instead of always on slot 1.
+- End-to-end `remote` scenario: it now runs against the same BDS build with LeviLamina and no server mods over RakNet (`get-bds.ps1 -Flavor levilamina`, port 19180), because NetherNet joins to the official server failed on some networks (`InitialConnection-95`) and whenever another game on the PC signed in to Minecraft's signaling service. The official server stays available with `BEETROOT_BDS_FLAVOR=vanilla` (with LeviHeadlessInput's exclusive signaling lock). On a connection failure the harness captures the game's error details.
 - README: `showFoodValuesInTooltipAlways` works without `showFoodValuesInTooltip` (as in AppleSkin and the code); the table said it needed it.
 - Sync diagnostics no longer forget the attribute and game-rule updates a remote server sends before the client's join event (the session state is now reset only on leaving).
 - The debug drawing (`src/debug/DebugDraw.cpp`, used by the `smoke` scenario) is now in the repository: `.gitignore`'s Visual Studio `[Dd]ebug/` rule had kept it out, so `smoke` failed on a clean checkout.

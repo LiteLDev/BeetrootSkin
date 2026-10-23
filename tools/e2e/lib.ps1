@@ -49,8 +49,19 @@ function Set-E2EInstance([int]$Slot) {
     $script:LockFile        = if ($Slot -le 1) { Join-Path $script:LauncherData 'bei-e2e.lock' } else { Join-Path $script:LauncherData "hi$Slot-e2e.lock" }
     # LeviHeadlessInput control pipe of this instance's game.
     $script:HeadlessPipe    = "LeviHeadlessInput-$script:VersionName"
+    # Child processes run.ps1 starts (scenario .restore.ps1 scripts) load this file afresh: tell
+    # them which slot they belong to, or they would act on slot 1's instance.
+    $env:BEETROOT_E2E_SLOT  = "$Slot"
 }
-Set-E2EInstance 1
+# A fresh process starts on the slot its parent run.ps1 holds (BEETROOT_E2E_SLOT), else slot 1.
+Set-E2EInstance $(if ($env:BEETROOT_E2E_SLOT -match '^\d+$') { [int]$env:BEETROOT_E2E_SLOT } else { 1 })
+
+# Output folder of a scenario/unit: tools\e2e\out\<unit> on slot 1 and <unit>-slot<N> on other
+# slots, so parallel runs of the same scenario do not overwrite each other's screenshots/logs.
+function Get-UnitOutDir([string]$unit) {
+    $name = if ($script:InstanceSlot -gt 1) { "$unit-slot$($script:InstanceSlot)" } else { $unit }
+    return Join-Path $script:OutDir $name
+}
 
 if (-not ('BsE2E.Native' -as [type])) {
     Add-Type -AssemblyName System.Drawing
@@ -448,6 +459,74 @@ function Set-WorldByteRule([string]$WorldDir, [string]$Rule, [byte]$Value) {
     }
 }
 
+# Diagnostics for world save problems: logs the level.dat rotation state (level.dat, level.dat_new,
+# level.dat_old with mtime and the value of a byte game rule), the db\ files, and, when a
+# level.dat_new was left behind (the game could not swap it in), which processes hold level.dat
+# (Restart Manager). Reads with full sharing, so it never blocks the game's own rename.
+function Write-WorldSaveState([string]$WorldDir, [string]$Rule = 'naturalregeneration') {
+    foreach ($f in 'level.dat', 'level.dat_new', 'level.dat_old') {
+        $path = Join-Path $WorldDir $f
+        if (-not (Test-Path $path)) { Write-Step "world: $f missing"; continue }
+        $value = '?'
+        try {
+            $fs = [IO.File]::Open($path, 'Open', 'Read', 'ReadWrite, Delete')
+            try { $bytes = New-Object byte[] $fs.Length; [void]$fs.Read($bytes, 0, $bytes.Length) } finally { $fs.Dispose() }
+            $b = [System.Collections.Generic.List[byte]]::new($bytes)
+            $p = Find-NbtTag $b 1 $Rule
+            if ($p -ge 0) { $value = $b[$p] }
+        } catch { $value = "unreadable: $($_.Exception.Message)" }
+        Write-Step "world: $f $((Get-Item $path).LastWriteTime.ToString('HH:mm:ss.fff')) $Rule=$value"
+    }
+    Get-ChildItem (Join-Path $WorldDir 'db') -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | ForEach-Object {
+        Write-Step "world: db\$($_.Name) $($_.Length) bytes $($_.LastWriteTime.ToString('HH:mm:ss.fff'))"
+    }
+    if (Test-Path (Join-Path $WorldDir 'level.dat_new')) {
+        foreach ($h in @(Get-FileHolders (Join-Path $WorldDir 'level.dat'))) { Write-Step "world: level.dat held by $h" }
+    }
+}
+
+# Processes that have a file open, via the Restart Manager API ("pid name" strings).
+function Get-FileHolders([string]$Path) {
+    if (-not ('BsE2E.RestartManager' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+namespace BsE2E {
+public static class RestartManager {
+    [StructLayout(LayoutKind.Sequential)] struct RM_UNIQUE_PROCESS { public int dwProcessId; public System.Runtime.InteropServices.ComTypes.FILETIME ProcessStartTime; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct RM_PROCESS_INFO {
+        public RM_UNIQUE_PROCESS Process;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string strAppName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string strServiceShortName;
+        public int ApplicationType; public uint AppStatus; public uint TSSessionId; [MarshalAs(UnmanagedType.Bool)] public bool bRestartable;
+    }
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)] static extern int RmStartSession(out uint h, int flags, string key);
+    [DllImport("rstrtmgr.dll")] static extern int RmEndSession(uint h);
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)] static extern int RmRegisterResources(uint h, uint nFiles, string[] files, uint nApps, IntPtr apps, uint nSvc, string[] svc);
+    [DllImport("rstrtmgr.dll")] static extern int RmGetList(uint h, out uint needed, ref uint count, [In, Out] RM_PROCESS_INFO[] info, ref uint reasons);
+    public static List<string> Holders(string path) {
+        var result = new List<string>();
+        uint h; if (RmStartSession(out h, 0, Guid.NewGuid().ToString()) != 0) return result;
+        try {
+            if (RmRegisterResources(h, 1, new[] { path }, 0, IntPtr.Zero, 0, null) != 0) return result;
+            uint needed = 0, count = 0, reasons = 0;
+            int rc = RmGetList(h, out needed, ref count, null, ref reasons);
+            if (rc == 234 && needed > 0) {
+                var info = new RM_PROCESS_INFO[needed]; count = needed;
+                if (RmGetList(h, out needed, ref count, info, ref reasons) == 0)
+                    for (int i = 0; i < count; i++) result.Add(info[i].Process.dwProcessId + " " + info[i].strAppName);
+            }
+        } finally { RmEndSession(h); }
+        return result;
+    }
+}
+}
+'@
+    }
+    return [BsE2E.RestartManager]::Holders($Path)
+}
+
 function Restore-TestWorld {
     $zip = Join-Path $script:RepoRoot "tools\e2e\fixtures\$script:WorldName.zip"
     if (-not (Test-Path $zip)) { Write-Step "no world fixture, skipping restore"; return }
@@ -713,7 +792,7 @@ function Get-ClientBitmap([switch]$FromScreen) {
 }
 
 function Save-Screenshot([string]$name, [string]$unit = 'scratch', [switch]$FromScreen) {
-    $dir = Join-Path $script:OutDir $unit
+    $dir = Get-UnitOutDir $unit
     New-Item -ItemType Directory -Force $dir | Out-Null
     $bmp = Get-ClientBitmap -FromScreen:$FromScreen
     # Downscale for review (keeps files small; 1280 wide is plenty to read the UI).
@@ -999,11 +1078,23 @@ function Reset-Player {
 # BDS lives outside the repository. 1.26.51.1 is the server build of the client's 1.26.51.01.
 $script:BdsRoot      = Join-Path $env:LOCALAPPDATA 'BeetrootSkin-bds'
 $script:BdsVersion   = '1.26.51.1'
-$script:BdsPort      = 19132
-# BDS 1.26.51 accepts only NetherNet ("transport=raknet" logs "TRANSPORT TYPE ERROR ... NetherNet
-# is the only supported transport type"), which needs Minecraft's online signaling service on both
-# sides even for 127.0.0.1, so the client can fail with "Multiplayer Connection Failed".
-$script:BdsTransport = 'nethernet'
+# Not the default 19132 (any client or LAN discovery tries that first) and outside the 19200+ band
+# other projects' e2e servers use. IPv6 uses the next port (server-portv6).
+$script:BdsPort      = 19180
+# Server flavor ($env:BEETROOT_BDS_FLAVOR):
+# - 'levilamina' (default): the same BDS build with LeviLamina and no server mods
+#   (bedrock_server_mod.exe, installed by `get-bds.ps1 -Flavor levilamina` with lip). It accepts
+#   transport=raknet: a direct UDP connection to 127.0.0.1 that needs no online service, so it works
+#   on any network and while other games are signed in. BeetrootSkin is client-only, and a server
+#   without mods behaves like vanilla for what `remote` checks.
+# - 'vanilla': the official bedrock_server.exe. It accepts only NetherNet ("transport=raknet" logs
+#   "TRANSPORT TYPE ERROR ... NetherNet is the only supported transport type"). NetherNet needs
+#   Minecraft's online signaling service (and the network path WebRTC needs) on both sides even for
+#   127.0.0.1, so the client can fail with "Multiplayer Connection Failed ... NetherNet".
+$script:BdsFlavor    = if ($env:BEETROOT_BDS_FLAVOR -eq 'vanilla') { 'vanilla' } else { 'levilamina' }
+$script:BdsLeviLaminaVersion = '26.51.7'
+$script:BdsTransport = if ($script:BdsFlavor -eq 'levilamina') { 'raknet' } else { 'nethernet' }
+$script:BdsExeName   = if ($script:BdsFlavor -eq 'levilamina') { 'bedrock_server_mod.exe' } else { 'bedrock_server.exe' }
 $script:BdsLevelName = 'BeetrootSkin-Remote'
 $script:BdsServerName = 'BeetrootSkin e2e'   # entry Join-Bds adds to the client's server list
 $script:Bds          = $null   # BsE2E.BdsProcess while a server runs
@@ -1065,7 +1156,10 @@ public sealed class BdsProcess {
 '@
 }
 
-function Get-BdsDir([string]$Version = $script:BdsVersion) { Join-Path $script:BdsRoot $Version }
+function Get-BdsDir([string]$Version = $script:BdsVersion) {
+    if ($script:BdsFlavor -eq 'levilamina') { return Join-Path $script:BdsRoot "levilamina-$script:BdsLeviLaminaVersion" }
+    return Join-Path $script:BdsRoot $Version
+}
 
 # Rewrite key=value lines of server.properties (keys that are missing are appended).
 function Set-BdsProperties([hashtable]$Properties, [string]$Version = $script:BdsVersion) {
@@ -1084,17 +1178,25 @@ function Set-BdsProperties([hashtable]$Properties, [string]$Version = $script:Bd
 # $BdsLevelName: survival, normal, cheats, every joining player operator, listening on
 # 127.0.0.1 only (loopback needs no firewall rule). The console log goes to out\<unit>\bds.log.
 function Start-Bds([string]$Unit = 'bds', [string]$Version = $script:BdsVersion, [int]$TimeoutSeconds = 120) {
-    Stop-Bds
+    # One dedicated server per machine (fixed port, shared folder): runs on other slots queue here.
+    Enter-BdsLock
+    Stop-Bds -Leftovers
     $dir = Get-BdsDir $Version
-    $exe = Join-Path $dir 'bedrock_server.exe'
-    if (-not (Test-Path $exe)) { throw "BDS $Version not found in $dir; run tools/e2e/get-bds.ps1 -Version $Version" }
+    $exe = Join-Path $dir $script:BdsExeName
+    if (-not (Test-Path $exe)) {
+        $hint = if ($script:BdsFlavor -eq 'levilamina') { "-Flavor levilamina" } else { "-Flavor vanilla -Version $Version" }
+        throw "BDS ($script:BdsFlavor) not found in $dir; run tools/e2e/get-bds.ps1 $hint"
+    }
     Set-BdsProperties @{
         'server-name' = $script:BdsServerName; 'gamemode' = 'survival'; 'difficulty' = 'normal'; 'allow-cheats' = 'true'
         'online-mode' = 'true'; 'allow-list' = 'false'; 'level-name' = $script:BdsLevelName
-        'server-port' = $script:BdsPort; 'server-ip' = '127.0.0.1'; 'enable-lan-visibility' = 'false'
+        'server-port' = $script:BdsPort; 'server-portv6' = ($script:BdsPort + 1); 'server-ip' = '127.0.0.1'; 'enable-lan-visibility' = 'false'
         'transport' = $script:BdsTransport
         'default-player-permission-level' = 'operator'; 'player-idle-timeout' = '0'
     } $Version
+    foreach ($p in $script:BdsPort, ($script:BdsPort + 1)) {
+        try { $u = [System.Net.Sockets.UdpClient]::new($p); $u.Dispose() } catch { throw "UDP port $p is in use; the e2e BDS needs $($script:BdsPort)/$($script:BdsPort + 1)" }
+    }
     $world = Join-Path $dir "worlds\$script:BdsLevelName"
     if (Test-Path $world) { Remove-Item -Recurse -Force $world }
     $zip = Join-Path $script:RepoRoot "tools\e2e\fixtures\$script:WorldName.zip"
@@ -1103,28 +1205,67 @@ function Start-Bds([string]$Unit = 'bds', [string]$Version = $script:BdsVersion,
         Set-Content (Join-Path $world 'levelname.txt') $script:BdsLevelName -NoNewline
         Set-WorldByteRule $world 'domobspawning' 0   # like Restore-TestWorld: no zombies in the shade
     }
-    $logDir = Join-Path $script:OutDir $Unit
+    $logDir = Get-UnitOutDir $Unit
     New-Item -ItemType Directory -Force $logDir | Out-Null
     $script:Bds = [BsE2E.BdsProcess]::Start($exe, (Join-Path $logDir 'bds.log'))
-    Write-Step "BDS $Version starting (pid $($script:Bds.Id), 127.0.0.1:$script:BdsPort)"
-    Wait-BdsLine 'Server started\.' 0 $TimeoutSeconds | Out-Null
+    Write-Step "BDS $(if ($script:BdsFlavor -eq 'levilamina') { "+LeviLamina $script:BdsLeviLaminaVersion" } else { $Version }) starting ($script:BdsTransport, pid $($script:Bds.Id), 127.0.0.1:$script:BdsPort)"
+    # Vanilla prints 'Server started.', LeviLamina 'Server started in (3.6s)! ...'.
+    Wait-BdsLine 'Server started[. ]' 0 $TimeoutSeconds | Out-Null
     Write-Step "BDS started"
 }
 
-# Stop the server started by Start-Bds ("stop" on the console, killed after 20 s), and any other
-# bedrock_server.exe running from $BdsRoot (leftover of an interrupted run).
-function Stop-Bds {
+# Machine-wide lock for the dedicated server (it uses a fixed port and one install folder), so
+# remote runs on different slots never share or kill each other's server. Held from Start-Bds
+# until Stop-Bds; the OS releases it if the run is killed.
+$script:BdsLockFile = Join-Path $script:LauncherData 'beetrootskin-bds.lock'
+$script:BdsLock     = $null
+
+function Enter-BdsLock([int]$TimeoutMinutes = 120, [switch]$NoWait) {
+    if ($script:BdsLock) { return $true }
+    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+    $logged   = $false
+    while ($true) {
+        try {
+            $script:BdsLock = [System.IO.File]::Open($script:BdsLockFile, 'OpenOrCreate', 'ReadWrite', 'None')
+            return $true
+        } catch [System.IO.IOException] {
+            if ($NoWait) { return $false }
+            if ((Get-Date) -gt $deadline) { throw "BDS lock $script:BdsLockFile still held after $TimeoutMinutes min" }
+            if (-not $logged) { Write-Step "waiting for the BDS lock (another run uses the dedicated server)"; $logged = $true }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
+function Exit-BdsLock {
+    if ($script:BdsLock) { $script:BdsLock.Dispose(); $script:BdsLock = $null }
+}
+
+# Stop the server started by Start-Bds in this process ("stop" on the console, killed after 20 s)
+# and release the BDS lock. -Leftovers also kills any other bedrock_server.exe running from
+# $BdsRoot (an interrupted run's), but only while holding the BDS lock: a server another slot's
+# run is using is never touched.
+function Stop-Bds([switch]$Leftovers) {
     if ($script:Bds) {
         $script:Bds.Stop(20000)
         $script:Bds = $null
         Write-Step "BDS stopped"
     }
-    # Match on the folder name, not the full path: a packaged (MSIX) shell sees %LOCALAPPDATA%
-    # redirected to its package's LocalCache\Local, so the process path differs from $BdsRoot.
-    $leaf = '\' + (Split-Path $script:BdsRoot -Leaf) + '\'
-    Get-Process -Name 'bedrock_server' -ErrorAction SilentlyContinue | Where-Object {
-        $_.Path -and $_.Path.IndexOf($leaf, [StringComparison]::OrdinalIgnoreCase) -ge 0
-    } | ForEach-Object { Write-Step "killing leftover BDS pid $($_.Id)"; $_.Kill($true); $_.WaitForExit(5000) | Out-Null }
+    if ($Leftovers) {
+        $held = [bool]$script:BdsLock
+        if (-not $held -and -not (Enter-BdsLock -NoWait)) {
+            Write-Step "BDS lock held by another run: leaving its server alone"
+            return
+        }
+        # Match on the folder name, not the full path: a packaged (MSIX) shell sees %LOCALAPPDATA%
+        # redirected to its package's LocalCache\Local, so the process path differs from $BdsRoot.
+        $leaf = '\' + (Split-Path $script:BdsRoot -Leaf) + '\'
+        Get-Process -Name 'bedrock_server', 'bedrock_server_mod' -ErrorAction SilentlyContinue | Where-Object {
+            $_.Path -and $_.Path.IndexOf($leaf, [StringComparison]::OrdinalIgnoreCase) -ge 0
+        } | ForEach-Object { Write-Step "killing leftover BDS pid $($_.Id)"; $_.Kill($true); $_.WaitForExit(5000) | Out-Null }
+        if ($held) { return }   # Start-Bds keeps the lock for the server it is about to start
+    }
+    Exit-BdsLock
 }
 
 # Join-Bds adds a server-list entry every run ("Add and play"); remove ours from the client's
@@ -1235,6 +1376,15 @@ function Join-Bds([int]$Attempts = 3) {
             return
         } catch {
             Save-Screenshot "join-failed-$attempt" $script:Unit | Out-Null
+            # "Show details" on "Multiplayer Connection Failed": the error code tells signaling,
+            # NAT/ICE and server-side failures apart. Closing the details returns to the dialog.
+            try {
+                Click 0.5 0.713 -Relative
+                Start-Sleep -Seconds 2
+                Save-Screenshot "join-failed-$attempt-details" $script:Unit | Out-Null
+                Press-Key ESC
+                Start-Sleep -Seconds 2
+            } catch { Write-Step "could not capture connection error details: $_" }
             # A player that reached the server (in the world or half-joined) is a real failure.
             if ($attempt -eq $Attempts -or (Get-BdsLog $bdsAt | Select-String 'Player connected: ')) { throw }
             Write-Step "server join failed (attempt $attempt): $_; retrying"

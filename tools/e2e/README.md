@@ -19,7 +19,8 @@ LeviHeadlessInput's `clone-instance.ps1`, lock `hi<N>-e2e.lock`), so several gam
 `-Slot 2`, or `$env:LEVI_E2E_SLOTS = '1,2,3'` to take the first free slot. Games are matched by
 instance folder, so a run only ever touches its own game. Only enable more slots once every
 harness on the machine does that (BEI's still treats every `Minecraft.Windows` process as its own).
-The `remote` scenario uses BDS port 19132: run it on one slot at a time.
+The `remote` scenario uses BDS port 19180 and a machine-wide BDS lock (`beetrootskin-bds.lock`):
+parallel `remote` runs queue for the server; other scenarios run alongside it.
 
 ```powershell
 xmake -y                                                   # build bin\BeetrootSkin first
@@ -64,7 +65,10 @@ meantime wins; the older aside copy is kept as `mods-disabled\<name>.stale-<time
 hand). Other projects' aside folders (e.g. `mods.abp-e2e-aside`) are never touched.
 
 **Look at the screenshots** in `tools\e2e\out\<scenario>\` (e.g. with the Read tool). They are the
-evidence that a feature works.
+evidence that a feature works. Runs on slots above 1 write to `tools\e2e\out\<scenario>-slot<N>\`, so
+parallel runs of one scenario keep their own screenshots and logs. Scenario `.restore.ps1` scripts run in
+a child process that inherits the slot through `BEETROOT_E2E_SLOT`, so they undo changes on the
+instance the scenario actually used.
 
 ## Writing a scenario
 
@@ -115,15 +119,29 @@ deleted by the next run. The `api` scenario uses `beetroot-api-sample`
 ## Remote server (`remote` scenario)
 
 `remote` tests the multiplayer path (food state from the attributes, game rules and difficulty
-the server syncs to the client: `source=client`, `exact=false`) against Mojang's official
-**Bedrock Dedicated Server** (BDS) instead of the integrated server.
+the server syncs to the client: `source=client`, `exact=false`) against a **Bedrock Dedicated
+Server** (BDS) instead of the integrated server.
 
 ```powershell
-pwsh -NoProfile -File tools/e2e/get-bds.ps1                 # once: BDS 1.26.51.1 -> %LOCALAPPDATA%\BeetrootSkin-bds\1.26.51.1
+pwsh -NoProfile -File tools/e2e/get-bds.ps1                 # once: BDS 1.26.51 + LeviLamina 26.51.7 (lip) -> %LOCALAPPDATA%\BeetrootSkin-bds\levilamina-26.51.7
 pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario remote
 ```
 
-- `get-bds.ps1 [-Version x.y.z.w | -Latest]` downloads
+- **Server flavor.** By default the scenario uses the same BDS build with **LeviLamina and no server
+  mods** (`bedrock_server_mod.exe`, `get-bds.ps1 -Flavor levilamina`, installed with `lip`). It runs
+  with `transport=raknet`: a direct UDP connection to 127.0.0.1:19180 that needs no online service.
+  BeetrootSkin is client-only, and a server without mods behaves like vanilla for what `remote`
+  checks (synced attributes, game rules, difficulty). LeviLamina's server still logs "Your current
+  connection type is not set to NetherNet ... Players will not be able to connect"; that line is
+  wrong for direct connections and can be ignored. `$env:BEETROOT_BDS_FLAVOR = 'vanilla'` selects
+  Mojang's official server instead (below), which only speaks NetherNet. On 2026-10-23 that failed
+  on a campus network ("Multiplayer Connection Failed", error detail `InitialConnection-95`,
+  `NetherNet:2193`) even with the signaling session stable and firewall rules in place, while the
+  RakNet flavor passed.
+- Port **19180** (IPv6 19181), not the default 19132, which any client or LAN discovery tries first:
+  with 19132, another project's test client joined the e2e server. Other projects' e2e servers use
+  19200 and up. `Start-Bds` fails fast if the pair is taken.
+- `get-bds.ps1 -Flavor vanilla [-Version x.y.z.w | -Latest]` downloads
   `https://www.minecraft.net/bedrockdedicatedserver/bin-win/bedrock-server-<version>.zip` (Mojang's
   official link; `-Latest` asks Mojang's download-links API) and extracts it to
   `%LOCALAPPDATA%\BeetrootSkin-bds\<version>`, outside the repository. Downloading it means
@@ -133,21 +151,35 @@ pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario remote
   `%LOCALAPPDATA%` is transparently redirected to the package's `LocalCache\Local`; that works the
   same, but the files are not where Explorer shows `%LOCALAPPDATA%`.
 - `remote.prelaunch.ps1` runs `Start-Bds`: it writes `server.properties` (survival, normal,
-  cheats, `level-name=BeetrootSkin-Remote`, `server-ip=127.0.0.1`, port 19132, no allow list, LAN
-  visibility off, every joining player operator), copies the `BeetrootSkin-Test` fixture world in as
-  the server's world (fresh every run, so the player starts fresh), starts `bedrock_server.exe` with
-  its console on pipes (log: `out\remote\bds.log`) and waits for `Server started.`. It then sets
+  cheats, `level-name=BeetrootSkin-Remote`, `server-ip=127.0.0.1`, port 19180/19181, `transport`
+  per flavor, no allow list, LAN visibility off, every joining player operator), copies the
+  `BeetrootSkin-Test` fixture world in as the server's world (fresh every run, so the player starts
+  fresh), starts `bedrock_server_mod.exe` (LeviLamina) or `bedrock_server.exe` (vanilla) with its
+  console on pipes (log: `out\remote\bds.log`) and waits for `Server started` (vanilla prints
+  `Server started.`, LeviLamina `Server started in (...)!`). It then sets
   `$script:EnterWorld = { Join-Bds }`, so run.ps1 joins the server instead of the local world.
 - `Join-Bds` drives Play > Servers > "+ Add server" (name `BeetrootSkin e2e`, 127.0.0.1) > "Add and
   play" > "Proceed" on the "Third-party online play" caution, then waits for BDS's `Player
-  Spawned: <name>` (kept in `$script:BdsPlayer`) and a `Food state: ... source=client` line. BDS
-  1.26.51 only supports the NetherNet transport (`transport=raknet` is rejected with "TRANSPORT
+  Spawned: <name>` (kept in `$script:BdsPlayer`) and a `Food state: ... source=client` line. With
+  the vanilla flavor: BDS 1.26.51 only supports the NetherNet transport (`transport=raknet` is rejected with "TRANSPORT
   TYPE ERROR"), which uses Minecraft's online signaling service even for 127.0.0.1: the machine
   needs internet access, and the client sometimes fails with "Multiplayer Connection Failed ...
   NetherNet". `Join-Bds` then goes "Back to menu" (which returns to the Servers tab with the new
-  entry selected) and presses its PLAY again (3 connects in all). When the client's signaling
-  is down for longer (seen for an hour on 2026-10-22 while BDS reported "Signed in to signaling
-  service successfully"; binding BDS to 0.0.0.0 did not help), the scenario cannot run. The
+  entry selected) and presses its PLAY again (3 connects in all).
+  **Signaling is shared per PC and account:** every game instance signs in to the signaling service
+  with the same ID at start (even in single-player), and a newer session knocks out the older one.
+  So the client's NetherNet session fails whenever another game starts meanwhile (another slot, or
+  another project such as BEI or AlleviatedBackpacks). The client log then shows `Connecting to
+  websocket at: wss://signaling-...` every few seconds while BDS still reports "Signed in to signaling
+  service successfully". For the vanilla flavor, `remote.prelaunch.ps1` therefore sets
+  `$script:ExclusiveSignaling = $true`.
+  LeviHeadlessInput's shim then holds `%APPDATA%\levilauncher.exe\e2e-signaling.lock` exclusively
+  from Start-Game to Stop-Game, blocking new headless games, and after acquiring it waits until no
+  `Minecraft.Windows` process is left at all (it logs which ones it waits for). That also covers
+  games outside the lock that already run (BEI's foreground harness, a run started with an older
+  shim, a game you play yourself); one started *during* the scenario still breaks it. Dedicated
+  servers (`bedrock_server`, `bedrock_server_mod`) sign in as servers, not with the user's sign-in
+  ID, and do not interfere. Neither the firewall nor binding BDS to 0.0.0.0 made a difference. The
   `minecraft://connect/?serverUrl=...` deep link is **not usable**: on this machine it is handled
   by the Microsoft Store install of Minecraft (a different, unmodded version), not by the
   LeviLauncher instance. The added server-list entry is removed again by `Remove-BdsServerEntries`
@@ -158,14 +190,19 @@ pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario remote
   Bedrock console notes: `effect <player> <effect> 0` removes one effect, `effect <player> clear`
   all of them; use `execute as <player> at @s run ...` for relative coordinates; "ERROR" console
   lines such as "no items to remove" are just command feedback.
-- `Stop-Bds` sends `stop` (kills after 20 s) and also kills any `bedrock_server.exe` running from
-  a `BeetrootSkin-bds` folder; run.ps1 calls it after closing the game and `remote.restore.ps1`
-  calls it again, so no server is left behind. The server's console pipes belong to the run.ps1
+- `Stop-Bds` sends `stop` to the server this run started (kills it after 20 s) and releases the BDS
+  lock; run.ps1 calls it after closing the game. `Start-Bds` and `remote.restore.ps1` call
+  `Stop-Bds -Leftovers`, which also kills any `bedrock_server(_mod).exe` running from a
+  `BeetrootSkin-bds` folder, but only while holding the BDS lock, so a server another slot's run is
+  using is never touched. No server is left behind. The server's console pipes belong to the run.ps1
   process, so it is stopped even with `-KeepOpen` (the game stays open, disconnected).
-- **Firewall:** the server listens on 127.0.0.1, which needs no rule, but it also opens other UDP
-  sockets (NetherNet signaling), so the first start of a new `bedrock_server.exe` path can still
-  raise a Windows Firewall "allow access" dialog. Close it with **Cancel**; never allow it or change
-  firewall rules. While the dialog is up, input to the game is blocked (see below).
+- **Firewall:** the RakNet flavor connects over loopback (127.0.0.1), which Windows Firewall does not
+  filter. The first start of a new server exe may still raise an "allow access" dialog; close it with
+  **Cancel** (headless runs keep working behind it). The vanilla flavor's NetherNet path uses more
+  than loopback. On a network Windows classes as **Public**, the Public-profile inbound *block*
+  rules that cancelled dialogs create for the server and game executables stop it. Narrow allow
+  rules (remote address = this PC's own IPs) were not enough on a campus network either; see the
+  flavor note above.
 
 ## Notes and pitfalls
 

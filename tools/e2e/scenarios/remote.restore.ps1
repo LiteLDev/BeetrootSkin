@@ -3,9 +3,9 @@
 # runs that were interrupted). Then drop the server-list entry Join-Bds added and put the
 # showFoodDebugInfo value remote.prelaunch.ps1 replaced back.
 . "$PSScriptRoot/../lib.ps1"
-Stop-Bds
+Stop-Bds -Leftovers
 Remove-BdsServerEntries
-$saved = Join-Path $script:OutDir 'remote\showFoodDebugInfo.orig'
+$saved = Join-Path (Get-UnitOutDir 'remote') 'showFoodDebugInfo.orig'
 $cfg = Join-Path $script:ModsDir "$script:ModName\config\config.json"
 if ((Test-Path $saved) -and (Test-Path $cfg)) {
     $value = (Get-Content $saved -Raw).Trim() -eq 'True'

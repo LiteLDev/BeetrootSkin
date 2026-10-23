@@ -2,10 +2,18 @@
 # tools/e2e/get-bds.ps1) with a copy of the fixture world, make run.ps1 join it instead of the
 # local world, and start with the food debug info hidden (F6 turns it on in the scenario; the
 # previous value is put back by remote.restore.ps1).
+#
+# Only the vanilla server needs NetherNet. Every game on this PC signs in to Minecraft's signaling
+# service with the same ID, and a game starting elsewhere (any slot, any project) knocks out this
+# client's NetherNet session ("Multiplayer Connection Failed ... NetherNet"). For that flavor, hold
+# LeviHeadlessInput's signaling lock EXCLUSIVE: the shim's Start-Game blocks new games and waits for
+# running ones to close; Stop-Game releases it. The default LeviLamina server uses RakNet (a
+# direct connection), which other games cannot disturb, so `remote` can run in parallel.
+$script:ExclusiveSignaling = ($script:BdsFlavor -eq 'vanilla')
 $cfg = Join-Path $script:ModsDir "$script:ModName\config\config.json"
 if (Test-Path $cfg) {
     $json = Get-Content $cfg -Raw | ConvertFrom-Json
-    $saved = Join-Path $script:OutDir 'remote\showFoodDebugInfo.orig'
+    $saved = Join-Path (Get-UnitOutDir 'remote') 'showFoodDebugInfo.orig'
     New-Item -ItemType Directory -Force (Split-Path $saved) | Out-Null
     # Kept from an interrupted run: that one holds the user's value.
     if (-not (Test-Path $saved)) { Set-Content $saved ([string]($json.showFoodDebugInfo -eq $true)) }

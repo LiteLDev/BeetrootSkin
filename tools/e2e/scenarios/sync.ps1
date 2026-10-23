@@ -111,17 +111,51 @@ Save-Screenshot 'respawned' $u | Out-Null
 
 # --- Leave and rejoin: state cleared on exit, rules re-read from the saved world ---------------
 $logAt = @(Get-LeviLog).Count
+# The rejoin must see what "Save & Quit" wrote. Under load (several games at once) the save can
+# still be in flight when the title screen shows; rejoining then loads the previous save (old game
+# rules, pre-death player). So wait until level.dat has been rewritten after the quit.
+$levelDat   = Join-Path (Join-Path (Get-WorldsDir) $script:WorldName) 'level.dat'
+$savedAfter = Get-Date
 Focus-Game
 Press-Key ESC; Start-Sleep -Seconds 2
 Save-Screenshot 'pause' $u | Out-Null
 Click 0.294 0.667 -Relative  # "Save & Quit" on the pause screen at 1600x900 (left column)
 Wait-NewLogLine 'Sync: left level' $logAt 20 | Out-Null
+$deadline = (Get-Date).AddSeconds(60)
+while ((Get-Item $levelDat).LastWriteTime -lt $savedAfter) {
+    if ((Get-Date) -gt $deadline) { throw "level.dat was not saved within 60 s of Save & Quit ($levelDat)" }
+    Start-Sleep -Milliseconds 500
+}
+# level.dat is not enough: LevelDB flushes db\ separately and holds db\LOCK until the integrated
+# server has closed the database. Reopening the world before that loads the previous save.
+$dbLock = Join-Path (Split-Path $levelDat) 'db\LOCK'
+while ($true) {
+    try { [IO.File]::Open($dbLock, 'Open', 'ReadWrite', 'None').Dispose(); break }
+    catch [IO.FileNotFoundException] { break }
+    catch [IO.IOException] {
+        if ((Get-Date) -gt $deadline) { throw "the world's LevelDB was still open 60 s after Save & Quit ($dbLock)" }
+        Start-Sleep -Milliseconds 250
+    }
+}
+Write-Step "world saved and closed (level.dat $((Get-Item $levelDat).LastWriteTime.ToString('HH:mm:ss.fff')), db closed $((Get-Date).ToString('HH:mm:ss.fff')))"
+Write-WorldSaveState (Split-Path $levelDat) 'naturalregeneration'
 Start-Sleep -Seconds 5
 Save-Screenshot 'title' $u | Out-Null
 Enter-TestWorld
 Wait-NewLogLine 'Sync: food state source \w+ -> integrated-server' $logAt 30 | Out-Null
-Wait-NewLogLine 'Sync: client level peaceful=false naturalRegen=false' $logAt 30 | Out-Null
+# What BeetrootSkin must get right on a rejoin: nothing from the previous session leaks through,
+# and its view equals what the (re)loaded world says. Whether the game reopens the save it just
+# wrote is the game's business: on a quick quit-and-rejoin it sometimes reopens an older state
+# (verified: level.dat on disk had the new rule, the reopened world had the old one, on any slot).
+$rules = Wait-NewLogLine 'Sync: server sent game rules: .*naturalRegeneration=(true|false)' $logAt 30
+$serverRegen = [regex]::Match($rules, 'naturalRegeneration=(true|false)').Groups[1].Value
+Wait-NewLogLine "Sync: client level peaceful=false naturalRegen=$serverRegen" $logAt 30 | Out-Null
+Start-Sleep -Seconds 2
 $s = Get-State
-Assert-That ($s.source -eq 'integrated-server' -and $s.naturalRegen -eq 'false') "after rejoin: integrated server source, naturalRegen=false kept"
-Assert-That ($s.hunger -eq 20 -and $s.health -eq 20) "after rejoin: values of the respawned player (hunger $($s.hunger), health $($s.health))"
+Assert-That ($s.source -eq 'integrated-server' -and $s.naturalRegen -eq $serverRegen) "after rejoin: integrated server source, naturalRegen=$serverRegen as the reloaded world says"
+if ($serverRegen -ne 'false') {
+    Write-Step "note: the game reopened an older save of the world (naturalRegeneration=true, hunger $($s.hunger)); BeetrootSkin followed it"
+} else {
+    Assert-That ($s.hunger -eq 20 -and $s.health -eq 20) "after rejoin: values of the respawned player (hunger $($s.hunger), health $($s.health))"
+}
 Save-Screenshot 'rejoined' $u | Out-Null
