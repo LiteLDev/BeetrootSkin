@@ -1,0 +1,61 @@
+{
+  "items": [
+    {
+      "kind": "video",
+      "src": "eat.mp4",
+      "poster": "eat.webp",
+      "width": 1280, "height": 720,
+      "title":   { "en": "See it before you eat it", "zh-CN": "吃之前先看效果" },
+      "caption": { "en": "Pick up a steak and the shanks and hearts it will restore start flashing; eat it and the golden saturation outlines appear.", "zh-CN": "拿起牛排，它能补回的鸡腿和心形就开始闪烁；吃下去后，金色的饱和度轮廓随之出现。" }
+    },
+    {
+      "kind": "image",
+      "src": "hud-preview.webp",
+      "width": 1216, "height": 376,
+      "title":   { "en": "The restore preview, up close", "zh-CN": "恢复预览特写" },
+      "caption": { "en": "Holding a steak at 10 hunger and 4.5 hearts: four shanks and the regenerated hearts flash on the HUD.", "zh-CN": "饥饿值 10、生命 4.5 颗心时手持牛排：HUD 上闪烁着四个鸡腿和能回复的心。" }
+    },
+    {
+      "kind": "image",
+      "src": "tooltips.webp",
+      "width": 1280, "height": 720,
+      "title":   { "en": "Food values in every tooltip", "zh-CN": "每个提示框里都有食物数值" },
+      "caption": { "en": "Shanks for hunger, golden icons for saturation. Rotten flesh gets the green bad-food shanks.", "zh-CN": "鸡腿代表饥饿值，金色图标代表饱和度；腐肉用的是绿色的坏食物鸡腿。" }
+    },
+    {
+      "kind": "image",
+      "src": "tooltip.webp",
+      "width": 1280, "height": 720,
+      "title":   { "en": "Right where you look", "zh-CN": "就在你看的地方" },
+      "caption": { "en": "Hover a food in your inventory or a chest; the values sit under its name.", "zh-CN": "在物品栏或箱子里把鼠标移到食物上，数值就显示在名字下面。" }
+    },
+    {
+      "kind": "image",
+      "src": "hud-golden_apple.webp",
+      "width": 1216, "height": 376,
+      "title":   { "en": "Golden apples count too", "zh-CN": "金苹果也算在内" },
+      "caption": { "en": "Not enough hunger to regenerate? The hearts still flash the health the golden apple's Regeneration gives back.", "zh-CN": "饥饿值不够自然回血？心形依然会闪烁显示金苹果的生命恢复效果能回多少血。" }
+    },
+    {
+      "kind": "image",
+      "src": "hud-rotten_flesh.webp",
+      "width": 1216, "height": 376,
+      "title":   { "en": "Even rotten flesh", "zh-CN": "腐肉也不例外" },
+      "caption": { "en": "Risky food previews with the green hunger-effect shanks, so you know what you are getting into.", "zh-CN": "有风险的食物用绿色的饥饿效果鸡腿预览，吃之前心里有数。" }
+    },
+    {
+      "kind": "image",
+      "src": "saturation.webp",
+      "width": 1216, "height": 376,
+      "title":   { "en": "Saturation you can see", "zh-CN": "看得见的饱和度" },
+      "caption": { "en": "Golden outlines show the saturation left before your hunger starts to drop; the checkered bar behind the shanks is your exhaustion.", "zh-CN": "金色轮廓是饥饿值开始下降前剩余的饱和度；鸡腿后面的格纹条是消耗度。" }
+    },
+    {
+      "kind": "image",
+      "src": "debug.webp",
+      "width": 1280, "height": 720,
+      "title":   { "en": "Exact numbers on F6", "zh-CN": "按 F6 查看精确数值" },
+      "caption": { "en": "Your precise hunger, saturation and exhaustion at the top left, whenever you want them.", "zh-CN": "左上角显示精确的饥饿值、饱和度和消耗度，想看就看。" }
+    }
+  ]
+}

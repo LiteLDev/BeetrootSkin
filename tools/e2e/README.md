@@ -116,6 +116,14 @@ removed by its `.restore.ps1` with `Remove-ExtraMod <name>`; a leftover from an 
 deleted by the next run. The `api` scenario uses `beetroot-api-sample`
 (`xmake f --api_sample=y; xmake`).
 
+## Showcase media (`showcase` scenario)
+
+`showcase` stages a pleasant spot of the fixture world and captures native 1600x900 frames of the
+tooltips, the HUD previews (bursts at ~33 fps with per-frame timestamps) and an eating clip into
+`out\showcase\`. `python tools/e2e/showcase-media.py --ffmpeg <ffmpeg.exe>` (Pillow + numpy) turns
+them into the WebP/MP4 files in `docs/showcase/`; `docs/showcase/showcase.json` lists them for the
+LeviMC Mods gallery.
+
 ## Remote server (`remote` scenario)
 
 `remote` tests the multiplayer path (food state from the attributes, game rules and difficulty

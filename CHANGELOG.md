@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - A logo (`docs/logo.png`), shown on [LeviMC Mods](https://levimc.org/mods/) through `avatar_url` in `tooth.json`.
+- Screenshots and a video in `docs/showcase/` for the README and the LeviMC Mods gallery, captured in the real game by the new `showcase` e2e scenario.
+
+### Changed
+
+- The README is now written for players; building, the e2e harness and the API for other mods moved to [CONTRIBUTING.md](CONTRIBUTING.md#development).
 
 ## [0.1.0] - 2026-10-24
 
