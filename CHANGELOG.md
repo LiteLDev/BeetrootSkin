@@ -7,14 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-24
+
 ### Added
 
-- A logo (`docs/logo.png`), shown on [LeviMC Mods](https://levimc.org/mods/) through `avatar_url` in `tooth.json`.
-- Screenshots and a video in `docs/showcase/` for the README and the LeviMC Mods gallery, captured in the real game by the new `showcase` e2e scenario.
+- A logo, and screenshots and a video of every feature in the [LeviMC Mods gallery](https://levimc.org/mods/github.com/LiteLDev/BeetrootSkin/?tab=gallery).
 
 ### Changed
 
-- The README is now written for players; building, the e2e harness and the API for other mods moved to [CONTRIBUTING.md](CONTRIBUTING.md#development).
+- A shorter README written for players. Notes for developers (building, the API for other mods) moved to [CONTRIBUTING.md](CONTRIBUTING.md#development).
 
 ## [0.1.0] - 2026-10-24
 
@@ -47,5 +48,6 @@ First release.
   - headers and import library in `beetrootskin-sdk-client-windows-x64.zip`.
 - **Translations**: English and Simplified Chinese.
 
-[Unreleased]: https://github.com/LiteLDev/BeetrootSkin/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/LiteLDev/BeetrootSkin/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LiteLDev/BeetrootSkin/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/LiteLDev/BeetrootSkin/releases/tag/v0.1.0
