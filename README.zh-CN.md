@@ -1,5 +1,7 @@
 # BeetrootSkin
 
+<img src="docs/logo.png" alt="" width="128" align="right">
+
 [English](README.md) | 简体中文
 
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)

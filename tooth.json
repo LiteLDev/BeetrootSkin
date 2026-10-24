@@ -6,7 +6,8 @@
   "info": {
     "name": "BeetrootSkin",
     "description": "BeetrootSkin: AppleSkin-style food and hunger information for Minecraft Bedrock Edition",
-    "tags": ["platform:levilamina", "type:mod", "client"]
+    "tags": ["platform:levilamina", "type:mod", "client"],
+    "avatar_url": "https://raw.githubusercontent.com/LiteLDev/BeetrootSkin/main/docs/logo.png"
   },
   "variants": [
     {
