@@ -25,7 +25,9 @@ Works in single-player, in LAN worlds and on servers. Only you need it: nothing 
 
 ## Install
 
-You need Minecraft Bedrock **1.26.51.01** for Windows with LeviLamina **26.51.x**, for example set up with [LeviLauncher](https://github.com/LiteLDev/LeviLauncher).
+You need Minecraft Bedrock Edition **1.26.51** for Windows (x64) with LeviLamina **26.51.x**, for example set up with [LeviLauncher](https://github.com/LiteLDev/LeviLauncher).
+
+With [lip](https://github.com/LiteLDev/lip):
 
 ```sh
 lip install github.com/LiteLDev/BeetrootSkin#client
@@ -71,4 +73,4 @@ Building it yourself or writing a mod against it? See [CONTRIBUTING.md](CONTRIBU
 
 ## License
 
-LGPL-3.0 © 2026 Zijian Zhang. The HUD and tooltip icons are AppleSkin's, by squeek502, released under the Unlicense ([NOTICE](assets/textures/NOTICE)). Not affiliated with Mojang Studios, Microsoft or the AppleSkin project.
+[LGPL-3.0-or-later](COPYING.LESSER) © LeviMC. The HUD and tooltip icons are AppleSkin's, by squeek502, released under the Unlicense ([NOTICE](assets/textures/NOTICE)). Not affiliated with Mojang Studios, Microsoft or the AppleSkin project.

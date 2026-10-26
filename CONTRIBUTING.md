@@ -13,7 +13,7 @@ Use the [issue templates](https://github.com/LiteLDev/BeetrootSkin/issues/new/ch
 - steps to reproduce;
 - the relevant part of `logs/latest.log` from your game folder.
 
-If a number looks wrong, compare it with what [AppleSkin](https://github.com/squeek502/AppleSkin) shows for the same food on Java Edition, and keep in mind the Bedrock differences listed under [How the numbers work on Bedrock](#how-the-numbers-work-on-bedrock).
+If a number looks wrong, compare it with what [AppleSkin](https://github.com/squeek502/AppleSkin) shows for the same food on Java Edition, and keep in mind the Bedrock differences listed under [How it works](#how-it-works).
 
 ## Development setup
 
@@ -47,9 +47,14 @@ xmake build -y beetroot-tests; xmake run beetroot-tests   # unit tests
 
 The mod version comes from `git describe`, so build from a git clone with at least one commit. [AGENTS.md](AGENTS.md) describes the architecture, the conventions and the rules for working with Bedrock internals.
 
-### End-to-end tests and showcase media
+### Tests
 
-[tools/e2e](tools/e2e/README.md) is the end-to-end test harness that drives the real game in the background. The screenshots and videos in [docs/showcase](docs/showcase/) (the README and the [LeviMC Mods gallery](https://levimc.org/mods/github.com/LiteLDev/BeetrootSkin/?tab=gallery), listed in `docs/showcase/showcase.json`) come from its `showcase` scenario:
+- Unit tests for the pure logic in `src/core`: `xmake build -y beetroot-tests; xmake run beetroot-tests`.
+- [tools/e2e](tools/e2e/README.md) is the end-to-end test harness that drives the real game in the background.
+
+### Showcase media
+
+The screenshots and videos in [docs/showcase](docs/showcase/) (the README and the [LeviMC Mods gallery](https://levimc.org/mods/github.com/LiteLDev/BeetrootSkin/?tab=gallery), listed in `docs/showcase/showcase.json`) come from the end-to-end `showcase` scenario:
 
 ```powershell
 pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario showcase
@@ -57,7 +62,7 @@ pwsh -NoProfile -File tools/e2e/run.ps1 -Scenario showcase
 
 It writes raw captures to `tools/e2e/out/showcase/`; the scenario's header says how they are turned into the WebP/MP4 files.
 
-### How the numbers work on Bedrock
+### How it works
 
 - **Regeneration.** Bedrock heals at a fixed rate while hunger is at least 18 and has no Java-style saturation-boosted fast regeneration. The health preview uses Bedrock's rules, so it can differ from what AppleSkin shows for the same food on Java. Saturation gained is `nutrition × saturation modifier × 2`, as in Bedrock.
 - **Where the values come from.** In single-player and when you host a LAN world, the values come straight from the integrated server and are exact. On dedicated servers and joined worlds, BeetrootSkin uses the hunger, saturation and exhaustion attributes the server sends to the client, which can lag slightly behind the server's own values.
@@ -112,4 +117,4 @@ mListeners.push_back(bus.emplaceListener<beetroot::api::TooltipOverlayEvent::Pre
 
 ## License
 
-By contributing you agree that your contributions are licensed under the [LGPL-3.0](COPYING.LESSER), the license of this project.
+By contributing you agree that your contributions are licensed under the [LGPL-3.0-or-later](COPYING.LESSER), the license of this project.

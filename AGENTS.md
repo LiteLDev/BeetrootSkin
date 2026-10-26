@@ -3,7 +3,7 @@
 BeetrootSkin is a port of [AppleSkin](https://github.com/squeek502/AppleSkin) (Java Edition food and
 hunger HUD/tooltip info) to Minecraft Bedrock, built as a **client** mod on LeviLamina. It targets MC
 **1.26.51.01** and LeviLamina **26.51.7**, and is built with xmake and clang-cl on Windows x64.
-The project layout, rules and harness come from the sibling project BEI (same author, LGPL-3.0).
+The project layout, rules and harness come from the sibling project BEI (same author, LGPL-3.0-or-later).
 
 ## Layout and ownership
 

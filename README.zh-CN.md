@@ -25,7 +25,9 @@
 
 ## 安装
 
-需要 Windows 版 Minecraft 基岩版 **1.26.51.01** 和 LeviLamina **26.51.x**（例如用 [LeviLauncher](https://github.com/LiteLDev/LeviLauncher) 安装）。
+需要 Windows (x64) 版 Minecraft 基岩版 **1.26.51** 和 LeviLamina **26.51.x**（例如用 [LeviLauncher](https://github.com/LiteLDev/LeviLauncher) 安装）。
+
+用 [lip](https://github.com/LiteLDev/lip) 安装：
 
 ```sh
 lip install github.com/LiteLDev/BeetrootSkin#client
@@ -71,4 +73,4 @@ lip install github.com/LiteLDev/BeetrootSkin#client
 
 ## 许可证
 
-LGPL-3.0 © 2026 Zijian Zhang。HUD 和提示框图标来自 squeek502 的 AppleSkin，以 Unlicense 发布（见 [NOTICE](assets/textures/NOTICE)）。本项目与 Mojang Studios、Microsoft 及 AppleSkin 项目均无关联。
+[LGPL-3.0-or-later](COPYING.LESSER) © LeviMC。HUD 和提示框图标来自 squeek502 的 AppleSkin，以 Unlicense 发布（见 [NOTICE](assets/textures/NOTICE)）。本项目与 Mojang Studios、Microsoft 及 AppleSkin 项目均无关联。

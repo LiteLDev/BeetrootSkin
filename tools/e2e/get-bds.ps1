@@ -48,7 +48,7 @@ if ($Flavor -eq 'levilamina') {
         return
     }
     if (-not (Get-Command lip -ErrorAction SilentlyContinue)) {
-        throw "lip is not installed. Get it from https://github.com/futrime/lip/releases (or 'winget install futrime.lip')"
+        throw "lip is not installed. Get it from https://github.com/LiteLDev/lip (npm install -g @levimc/lip, or 'winget install levimc.lip')"
     }
     # Install into a temporary folder and rename it only after it succeeded, so an interrupted
     # install never leaves a half server behind.
